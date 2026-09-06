@@ -161,6 +161,15 @@ def run_ai_triage(
 
     segment = session.query(VideoSegment).filter_by(id=segment_id).first()
     if not segment:
+        # Check if segment_id was an evidence_id
+        segment = session.query(VideoSegment).filter_by(evidence_id=segment_id).first()
+    if not segment:
+        # Check if evidence exists and auto-create the primary VideoSegment
+        ev_check = session.query(EvidenceItem).filter_by(id=segment_id).first()
+        if ev_check:
+            from forensiq.services.timeline_service import create_or_update_segment_from_evidence
+            segment = create_or_update_segment_from_evidence(session, ev_check.id)
+    if not segment:
         raise ValueError(f"VideoSegment not found: {segment_id}")
 
     evidence = session.query(EvidenceItem).filter_by(id=segment.evidence_id).first()

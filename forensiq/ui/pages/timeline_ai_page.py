@@ -93,14 +93,29 @@ class AITriageWorker(QThread):
     """Runs AI triage off the main thread."""
     triage_finished = Signal(bool, int, str)  # success, count, error_msg
 
-    def __init__(self, segment_id: str, actor_id: str = "Investigator"):
+    def __init__(self, segment_id: Optional[str], evidence_id: Optional[str] = None, actor_id: str = "Investigator"):
         super().__init__()
         self._segment_id = segment_id
+        self._evidence_id = evidence_id
         self._actor_id = actor_id
 
     def run(self) -> None:
         try:
             with session_scope() as session:
+                target_segment = None
+                if self._segment_id:
+                    target_segment = session.query(VideoSegment).filter_by(id=self._segment_id).first()
+
+                if not target_segment and self._evidence_id:
+                    target_segment = session.query(VideoSegment).filter_by(evidence_id=self._evidence_id).first()
+                    if not target_segment:
+                        target_segment = create_or_update_segment_from_evidence(session, self._evidence_id)
+
+                if not target_segment:
+                    raise ValueError(f"VideoSegment not found for evidence: {self._evidence_id or self._segment_id}")
+
+                self._segment_id = target_segment.id
+
                 detections = run_ai_triage(
                     session=session,
                     segment_id=self._segment_id,
@@ -1467,14 +1482,17 @@ class TimelineAIPage(QWidget):
         self._load_timeline_data(self._selected_evidence_id)
 
     def _start_ai_triage(self) -> None:
-        if not self._selected_segment_id:
-            QMessageBox.warning(self, "No Segment Ready", "Please select an evidence item with parsed stream data.")
+        if not self._selected_segment_id and not self._selected_evidence_id:
+            QMessageBox.warning(self, "No Evidence Selected", "Please select an evidence item first.")
             return
 
         self._triage_btn.setEnabled(False)
         self._progress_bar.setVisible(True)
 
-        self._triage_worker = AITriageWorker(self._selected_segment_id)
+        self._triage_worker = AITriageWorker(
+            segment_id=self._selected_segment_id,
+            evidence_id=self._selected_evidence_id,
+        )
         self._triage_worker.triage_finished.connect(self._on_triage_finished)
         self._triage_worker.start()
 
