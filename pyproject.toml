@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "forensiq-vault"
+version = "0.1.0"
+description = "Multi-Vendor DVR/NVR Forensic Analysis Tool — SIH 2026"
+readme = "README.md"
+requires-python = ">=3.12"  # Tested with Python 3.14
+license = { text = "Proprietary — SIH 2026 Student Project" }
+keywords = ["forensics", "dvr", "nvr", "evidence", "chain-of-custody"]
+dependencies = [
+    "PySide6>=6.10.1",        # 6.11.2 installed; >=6.10.1 required for Python 3.14
+    "SQLAlchemy>=2.0.38",     # 2.0.52 installed; >=2.0.38 required for Python 3.14
+    "Jinja2>=3.1.5",
+    "python-dotenv>=1.0.1",
+    "scikit-learn>=1.6.0",
+    "numpy>=2.0.0",
+    "joblib>=1.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.4",
+]
+
+[project.scripts]
+forensiq = "forensiq.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["forensiq*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
