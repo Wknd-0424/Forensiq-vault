@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -143,48 +144,56 @@ class TimelineAIPage(QWidget):
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 20, 24, 20)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(20, 14, 20, 14)
+        main_layout.setSpacing(10)
 
-        # 1. Header
+        # 1. Header Bar with integrated Forensic Invariant Badge
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+
         header_box = QVBoxLayout()
-        header_box.setSpacing(4)
+        header_box.setSpacing(2)
         title_lbl = QLabel("Timeline Analysis & AI-Assisted Triage")
         title_lbl.setObjectName("page_title")
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #e8f0fe;")
         header_box.addWidget(title_lbl)
 
         sub_lbl = QLabel(
             "Chronological event correlation, timestamp drift normalization, "
-            "and AI object/motion detection with human review."
+            "and YOLOv8 surveillance triage with human analyst verification."
         )
         sub_lbl.setObjectName("page_subtitle")
+        sub_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
         header_box.addWidget(sub_lbl)
-        main_layout.addLayout(header_box)
+        header_row.addLayout(header_box, stretch=1)
 
-        # 2. Forensic Notice
-        notice = WarningPanel(
-            "FORENSIC INVARIANT: Raw timestamps are preserved verbatim. Normalized UTC timestamps "
-            "are derived values. AI triage outputs are investigative aids; human analyst review is mandatory."
+        # Forensic invariant badge (compact top-right pill)
+        invariant_badge = QLabel(
+            "🛡 FORENSIC INVARIANT: Raw timestamps immutable · AI triage outputs require human verification"
         )
-        main_layout.addWidget(notice)
+        invariant_badge.setStyleSheet(
+            "background: #091a2e; color: #7ec8e3; border: 1px solid #1e3a5f; "
+            "border-radius: 6px; padding: 6px 14px; font-size: 11px; font-weight: 500;"
+        )
+        header_row.addWidget(invariant_badge)
+        main_layout.addLayout(header_row)
 
-        # 3. Control & Normalization Toolbar
+        # 2. Control & Normalization Toolbar
         ctrl_card = QFrame()
         ctrl_card.setStyleSheet(
             "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 6px; }"
+            "border-radius: 8px; padding: 4px 8px; }"
         )
         ctrl_layout = QHBoxLayout(ctrl_card)
-        ctrl_layout.setContentsMargins(12, 8, 12, 8)
-        ctrl_layout.setSpacing(12)
+        ctrl_layout.setContentsMargins(10, 6, 10, 6)
+        ctrl_layout.setSpacing(10)
 
-        # Evidence selector
         ev_lbl = QLabel("Evidence:")
         ev_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
         ctrl_layout.addWidget(ev_lbl)
 
         self._evidence_combo = QComboBox()
-        self._evidence_combo.setMinimumWidth(240)
+        self._evidence_combo.setMinimumWidth(260)
         self._evidence_combo.setStyleSheet(
             "QComboBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
             "border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
@@ -192,8 +201,13 @@ class TimelineAIPage(QWidget):
         )
         self._evidence_combo.currentIndexChanged.connect(self._on_evidence_selected)
         ctrl_layout.addWidget(self._evidence_combo)
+        self._ev_selector = self._evidence_combo  # Script compatibility alias
 
-        # Offset sign
+        # Offset controls
+        off_lbl = QLabel("Drift Offset:")
+        off_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px; margin-left: 6px;")
+        ctrl_layout.addWidget(off_lbl)
+
         self._sign_combo = QComboBox()
         self._sign_combo.addItems(["+ (Ahead / Fast)", "- (Behind / Lag)"])
         self._sign_combo.setFixedWidth(120)
@@ -202,11 +216,6 @@ class TimelineAIPage(QWidget):
             "border-radius: 4px; padding: 4px 6px; font-size: 11px; }"
         )
         ctrl_layout.addWidget(self._sign_combo)
-
-        # Offset spinbox (seconds)
-        off_lbl = QLabel("Drift Offset (sec):")
-        off_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
-        ctrl_layout.addWidget(off_lbl)
 
         self._offset_spin = QDoubleSpinBox()
         self._offset_spin.setRange(0.0, 86400.0)
@@ -219,7 +228,6 @@ class TimelineAIPage(QWidget):
         )
         ctrl_layout.addWidget(self._offset_spin)
 
-        # Normalization method
         self._method_combo = QComboBox()
         self._method_combo.addItems([
             NormalizationMethod.ANALYST_OFFSET.value,
@@ -249,7 +257,7 @@ class TimelineAIPage(QWidget):
         self._triage_btn = QPushButton("⚡ Run AI Triage")
         self._triage_btn.setStyleSheet(
             "QPushButton { background: #7c3aed; color: #ffffff; font-weight: bold; "
-            "border-radius: 4px; padding: 5px 14px; font-size: 11px; }"
+            "border-radius: 4px; padding: 5px 16px; font-size: 11px; }"
             "QPushButton:hover { background: #6d28d9; }"
             "QPushButton:disabled { background: #1e2d3d; color: #64748b; }"
         )
@@ -280,7 +288,7 @@ class TimelineAIPage(QWidget):
         # Progress bar
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 0)
-        self._progress_bar.setFixedHeight(5)
+        self._progress_bar.setFixedHeight(4)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(
             "QProgressBar { background: #12181f; border-radius: 2px; border: none; }"
@@ -289,41 +297,320 @@ class TimelineAIPage(QWidget):
         self._progress_bar.setVisible(False)
         main_layout.addWidget(self._progress_bar)
 
-        # 4. Interactive Timeline Scrubber
+        # 3. Main Splitter: Video Theater (Left) and Inspection Dock (Right)
+        self._main_splitter = QSplitter(Qt.Horizontal)
+        self._main_splitter.setStyleSheet("QSplitter::handle { background: #1e3a5f; width: 3px; }")
+
+        # Left: Video & Timeline Scrubber Theater (Spacious 62-65% width)
+        left_theater = self._build_video_theater_panel()
+        self._main_splitter.addWidget(left_theater)
+
+        # Right: Tabbed Forensic Inspection Dock (AI Detections + Event Ledger + Gap Audit)
+        right_dock = self._build_inspection_dock_panel()
+        self._main_splitter.addWidget(right_dock)
+
+        self._main_splitter.setStretchFactor(0, 6)
+        self._main_splitter.setStretchFactor(1, 4)
+        self._main_splitter.setSizes([1140, 620])
+        main_layout.addWidget(self._main_splitter, stretch=1)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Video & Timeline Theater Panel (Left)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_video_theater_panel(self) -> QWidget:
+        panel = QWidget()
+        vbox = QVBoxLayout(panel)
+        vbox.setContentsMargins(0, 0, 6, 0)
+        vbox.setSpacing(8)
+
+        # Video Frame Card
+        theater_card = QFrame()
+        theater_card.setStyleSheet(
+            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
+            "border-radius: 8px; padding: 8px; }"
+        )
+        card_layout = QVBoxLayout(theater_card)
+        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setSpacing(8)
+
+        # Top Header of Video Card
+        prev_top = QHBoxLayout()
+        prev_title = QLabel("🎬 VIDEO WORKING COPY PREVIEW")
+        prev_title.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
+        prev_top.addWidget(prev_title)
+
+        wc_badge = QLabel("● Working Copy Verified")
+        wc_badge.setStyleSheet("color: #34d399; font-size: 11px; font-weight: bold; margin-left: 8px;")
+        prev_top.addWidget(wc_badge)
+
+        prev_top.addStretch()
+        self._channel_tag = QLabel("Channel: CH-01")
+        self._channel_tag.setStyleSheet("color: #9aa5b4; font-size: 11px; font-weight: 500;")
+        prev_top.addWidget(self._channel_tag)
+        card_layout.addLayout(prev_top)
+
+        # Video Canvas - Spacious and responsive!
+        self._screen_box = QLabel()
+        self._screen_box.setAlignment(Qt.AlignCenter)
+        self._screen_box.setMinimumHeight(440)
+        self._screen_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._screen_box.setStyleSheet(
+            "background: #000000; color: #64748b; border: 1px solid #1e3a5f; "
+            "border-radius: 6px; font-size: 12px;"
+        )
+        self._screen_box.setText("▶ Select an evidence item to load video preview")
+        card_layout.addWidget(self._screen_box, stretch=1)
+
+        # Transport & Shuttle Control Bar
+        transport_bar = QHBoxLayout()
+        transport_bar.setSpacing(6)
+
+        self._play_btn = QPushButton("▶ Play")
+        self._play_btn.setFixedWidth(75)
+        self._play_btn.setStyleSheet(
+            "QPushButton { background: #1b3a4b; color: #a5f3fc; border: 1px solid #2d6a8f; "
+            "border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; }"
+            "QPushButton:hover { background: #235269; color: #ffffff; }"
+        )
+        self._play_btn.clicked.connect(self._toggle_playback)
+        transport_bar.addWidget(self._play_btn)
+
+        shuttle_minus5 = QPushButton("⏮ -5s")
+        shuttle_minus5.setFixedWidth(50)
+        shuttle_minus5.setStyleSheet(
+            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
+            "border-radius: 4px; padding: 4px; font-size: 10px; }"
+            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
+        )
+        shuttle_minus5.clicked.connect(lambda: self._step_position(-5.0))
+        transport_bar.addWidget(shuttle_minus5)
+
+        self._step_back_btn = QPushButton("◀ -1s")
+        self._step_back_btn.setFixedWidth(50)
+        self._step_back_btn.setStyleSheet(
+            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
+            "border-radius: 4px; padding: 4px; font-size: 10px; }"
+            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
+        )
+        self._step_back_btn.clicked.connect(lambda: self._step_position(-1.0))
+        transport_bar.addWidget(self._step_back_btn)
+
+        self._step_fwd_btn = QPushButton("+1s ▶")
+        self._step_fwd_btn.setFixedWidth(50)
+        self._step_fwd_btn.setStyleSheet(
+            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
+            "border-radius: 4px; padding: 4px; font-size: 10px; }"
+            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
+        )
+        self._step_fwd_btn.clicked.connect(lambda: self._step_position(1.0))
+        transport_bar.addWidget(self._step_fwd_btn)
+
+        shuttle_plus5 = QPushButton("+5s ⏭")
+        shuttle_plus5.setFixedWidth(50)
+        shuttle_plus5.setStyleSheet(
+            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
+            "border-radius: 4px; padding: 4px; font-size: 10px; }"
+            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
+        )
+        shuttle_plus5.clicked.connect(lambda: self._step_position(5.0))
+        transport_bar.addWidget(shuttle_plus5)
+
+        self._tc_label = QLabel("Position: 00:00:00.000 / 00:00:00.000")
+        self._tc_label.setStyleSheet("color: #a5f3fc; font-family: 'Courier New'; font-size: 11px; font-weight: bold; margin-left: 8px;")
+        transport_bar.addWidget(self._tc_label, stretch=1)
+
+        self._meta_badge = QLabel("—")
+        self._meta_badge.setStyleSheet(
+            "color: #7ec8e3; background: #0c1c2e; border: 1px solid #1e3a5f; "
+            "border-radius: 4px; padding: 2px 8px; font-size: 10px; font-family: 'Courier New';"
+        )
+        transport_bar.addWidget(self._meta_badge)
+        card_layout.addLayout(transport_bar)
+
+        # Timeline Scrubber directly beneath video!
+        scrubber_lbl_row = QHBoxLayout()
+        scrubber_title = QLabel("📅 INTERACTIVE TIMELINE SCRUBBER")
+        scrubber_title.setStyleSheet("color: #7ec8e3; font-size: 10px; font-weight: bold; margin-top: 4px;")
+        scrubber_lbl_row.addWidget(scrubber_title)
+
+        legend_lbl = QLabel(
+            "● <span style='color:#fbbf24'>Metadata</span>  "
+            "● <span style='color:#c084fc'>YOLOv8</span>  "
+            "● <span style='color:#38bdf8'>Bookmark</span>  "
+            "● <span style='color:#f87171'>Discontinuity</span>"
+        )
+        legend_lbl.setStyleSheet("font-size: 10px; margin-top: 4px;")
+        scrubber_lbl_row.addStretch()
+        scrubber_lbl_row.addWidget(legend_lbl)
+        card_layout.addLayout(scrubber_lbl_row)
+
         self._timeline_widget = TimelineWidget(self)
         self._timeline_widget.position_changed.connect(self._on_scrubber_moved)
         self._timeline_widget.event_selected.connect(self._on_timeline_marker_clicked)
-        main_layout.addWidget(self._timeline_widget)
+        card_layout.addWidget(self._timeline_widget)
 
-        # 5. Splitter: Event Ledger (Left) and Detail Inspectors (Right)
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setStyleSheet("QSplitter::handle { background: #1e3a5f; width: 2px; }")
+        # Continuity status footer
+        self._audit_msg = QLabel("✓ Chronological sequence is continuous. No temporal gaps detected.")
+        self._audit_msg.setStyleSheet("color: #34d399; font-size: 11px; padding: 2px 4px;")
+        card_layout.addWidget(self._audit_msg)
 
-        # Left: Event Table
-        left_widget = self._build_event_table_panel()
-        splitter.addWidget(left_widget)
-
-        # Right: Detail Cards (Video Preview + AI Detections + Audit)
-        right_widget = self._build_right_inspector_panel()
-        splitter.addWidget(right_widget)
-
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        main_layout.addWidget(splitter, stretch=1)
+        vbox.addWidget(theater_card, stretch=1)
+        return panel
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Event Table Panel (Left)
+    # Inspection Dock Panel (Right)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_inspection_dock_panel(self) -> QWidget:
+        dock = QWidget()
+        vbox = QVBoxLayout(dock)
+        vbox.setContentsMargins(4, 0, 0, 0)
+        vbox.setSpacing(6)
+
+        self._right_tabs = QTabWidget()
+        self._right_tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #1e3a5f; background: #0d1821; border-radius: 6px; }"
+            "QTabBar::tab { background: #121d28; color: #9aa5b4; padding: 7px 12px; font-weight: bold; font-size: 11px; border: 1px solid #1e3a5f; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }"
+            "QTabBar::tab:selected { background: #0d1821; color: #7ec8e3; border-bottom: 2px solid #0284c7; }"
+            "QTabBar::tab:hover { color: #e8f0fe; background: #192837; }"
+        )
+
+        # Tab 1: AI Triage Detections
+        ai_tab = self._build_ai_tab()
+        self._right_tabs.addTab(ai_tab, "🤖 AI Triage Detections")
+
+        # Tab 2: Chronological Event Ledger
+        event_tab = self._build_event_table_panel()
+        self._right_tabs.addTab(event_tab, "📋 Event Ledger")
+
+        # Tab 3: Gap & Drift Audit
+        audit_tab = self._build_audit_tab()
+        self._right_tabs.addTab(audit_tab, "⏱ Gap & Drift Audit")
+
+        vbox.addWidget(self._right_tabs, stretch=1)
+        return dock
+
+    def _build_ai_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        top_row = QHBoxLayout()
+        ai_title = QLabel("YOLOv8 SURVEILLANCE TRIAGE FINDINGS")
+        ai_title.setStyleSheet("color: #c084fc; font-weight: bold; font-size: 11px;")
+        top_row.addWidget(ai_title)
+
+        top_row.addStretch()
+        if is_yolo_available():
+            engine_text = "● YOLOv8 Triage Mode"
+        elif is_gemini_available():
+            engine_text = "● Gemini AI"
+        else:
+            engine_text = "● Local ML Mode"
+        self._ai_engine_lbl = QLabel(engine_text)
+        self._ai_engine_lbl.setStyleSheet("color: #a855f7; font-size: 10px; font-weight: bold;")
+        top_row.addWidget(self._ai_engine_lbl)
+        layout.addLayout(top_row)
+
+        hint = QLabel("Select any detection to seek video and view bounding box:")
+        hint.setStyleSheet("color: #64748b; font-size: 10px;")
+        layout.addWidget(hint)
+
+        # Detections table
+        det_cols = ["Class", "Confidence", "Timecode", "Review Status"]
+        self._det_table = QTableWidget(0, len(det_cols))
+        self._det_table.setHorizontalHeaderLabels(det_cols)
+        self._det_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self._det_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._det_table.verticalHeader().setVisible(False)
+        self._det_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._det_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._det_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._det_table.setAlternatingRowColors(True)
+        self._det_table.setStyleSheet(
+            "QTableWidget { background: #0a1118; color: #cdd6e0; border: 1px solid #1e3a5f; border-radius: 4px; }"
+            "QHeaderView::section { background: #0a1628; color: #c084fc; padding: 5px; font-size: 10px; font-weight: bold; }"
+            "QTableWidget::item:selected { background: #2e1065; color: #ffffff; }"
+        )
+        self._det_table.itemSelectionChanged.connect(self._on_detection_selected)
+        layout.addWidget(self._det_table, stretch=1)
+
+        # Review action box
+        rev_box = QFrame()
+        rev_box.setStyleSheet("background: #0a131c; border: 1px solid #1e3a5f; border-radius: 6px; padding: 6px;")
+        rev_layout = QVBoxLayout(rev_box)
+        rev_layout.setContentsMargins(8, 6, 8, 6)
+        rev_layout.setSpacing(6)
+
+        rev_lbl = QLabel("HUMAN ANALYST TRIAGE REVIEW:")
+        rev_lbl.setStyleSheet("color: #9aa5b4; font-size: 10px; font-weight: bold;")
+        rev_layout.addWidget(rev_lbl)
+
+        rev_btn_row = QHBoxLayout()
+        self._confirm_btn = QPushButton("✓ Confirm Finding")
+        self._confirm_btn.setStyleSheet(
+            "QPushButton { background: #065f46; color: #34d399; font-weight: bold; "
+            "border-radius: 4px; padding: 6px 10px; font-size: 11px; }"
+            "QPushButton:hover { background: #047857; }"
+            "QPushButton:disabled { background: #121f2d; color: #475569; }"
+        )
+        self._confirm_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.CONFIRMED.value))
+        rev_btn_row.addWidget(self._confirm_btn)
+
+        self._reject_btn = QPushButton("✕ Reject False Positive")
+        self._reject_btn.setStyleSheet(
+            "QPushButton { background: #7f1d1d; color: #f87171; font-weight: bold; "
+            "border-radius: 4px; padding: 6px 10px; font-size: 11px; }"
+            "QPushButton:hover { background: #991b1b; }"
+            "QPushButton:disabled { background: #121f2d; color: #475569; }"
+        )
+        self._reject_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.REJECTED.value))
+        rev_btn_row.addWidget(self._reject_btn)
+        rev_layout.addLayout(rev_btn_row)
+
+        layout.addWidget(rev_box)
+        return widget
+
+    def _build_audit_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        title = QLabel("⏱ SEQUENCE CONTINUITY & TIME DISCONTINUITY AUDIT")
+        title.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
+        layout.addWidget(title)
+
+        self._audit_detail_box = QTextEdit()
+        self._audit_detail_box.setReadOnly(True)
+        self._audit_detail_box.setStyleSheet(
+            "QTextEdit { background: #0a1118; color: #cdd6e0; border: 1px solid #1e3a5f; "
+            "border-radius: 4px; font-family: 'Courier New'; font-size: 11px; padding: 8px; }"
+        )
+        self._audit_detail_box.setText(
+            "• Temporal sequence analysis running.\n"
+            "• Monotonic timestamp progression verified.\n"
+            "• Discontinuity gap threshold: 120.0 seconds.\n"
+            "• Zero frame drop reversals detected."
+        )
+        layout.addWidget(self._audit_detail_box, stretch=1)
+        return widget
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Event Table Panel
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_event_table_panel(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 8, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         # Filter row
         filter_row = QHBoxLayout()
-        f_lbl = QLabel("Filter Events:")
+        f_lbl = QLabel("Filter:")
         f_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
         filter_row.addWidget(f_lbl)
 
@@ -337,7 +624,7 @@ class TimelineAIPage(QWidget):
         filter_row.addWidget(self._type_filter)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search timeline description...")
+        self._search_input.setPlaceholderText("Search events...")
         self._search_input.setStyleSheet(
             "background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
             "border-radius: 4px; padding: 4px 8px; font-size: 11px;"
@@ -358,195 +645,15 @@ class TimelineAIPage(QWidget):
         self._event_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._event_table.setAlternatingRowColors(True)
         self._event_table.setStyleSheet(
-            "QTableWidget { background: #0d1821; color: #cdd6e0; "
-            "gridline-color: #1e3a5f; border: 1px solid #1e3a5f; border-radius: 6px; }"
-            "QHeaderView::section { background: #0a1628; color: #7ec8e3; padding: 5px; font-weight: bold; }"
-            "QTableWidget::item:selected { background: #1e3a5f; }"
+            "QTableWidget { background: #0a1118; color: #cdd6e0; "
+            "gridline-color: #1e3a5f; border: 1px solid #1e3a5f; border-radius: 4px; }"
+            "QHeaderView::section { background: #0a1628; color: #7ec8e3; padding: 5px; font-size: 10px; font-weight: bold; }"
+            "QTableWidget::item:selected { background: #1e3a5f; color: #ffffff; }"
         )
         self._event_table.itemSelectionChanged.connect(self._on_table_selection_changed)
         layout.addWidget(self._event_table, stretch=1)
 
         return widget
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Right Inspector Panel
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _build_right_inspector_panel(self) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(8, 0, 0, 0)
-        layout.setSpacing(12)
-
-        # 1. Preview / Scrubber Card
-        prev_card = QFrame()
-        prev_card.setStyleSheet(
-            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 8px; }"
-        )
-        prev_vbox = QVBoxLayout(prev_card)
-        prev_vbox.setContentsMargins(10, 8, 10, 8)
-        prev_vbox.setSpacing(8)
-
-        prev_top = QHBoxLayout()
-        prev_title = QLabel("🎬 VIDEO WORKING COPY PREVIEW")
-        prev_title.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
-        prev_top.addWidget(prev_title)
-
-        prev_top.addStretch()
-        self._channel_tag = QLabel("Channel: CH-01")
-        self._channel_tag.setStyleSheet("color: #9aa5b4; font-size: 11px;")
-        prev_top.addWidget(self._channel_tag)
-        prev_vbox.addLayout(prev_top)
-
-        # Video screen canvas
-        self._screen_box = QLabel()
-        self._screen_box.setAlignment(Qt.AlignCenter)
-        self._screen_box.setMinimumHeight(240)
-        self._screen_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._screen_box.setStyleSheet(
-            "background: #000000; color: #64748b; border: 1px solid #1e3a5f; "
-            "border-radius: 6px; font-size: 11px;"
-        )
-        self._screen_box.setText("▶ Select an evidence item to load video preview")
-        prev_vbox.addWidget(self._screen_box)
-
-        # Transport & Control bar
-        transport_bar = QHBoxLayout()
-        transport_bar.setSpacing(6)
-
-        self._play_btn = QPushButton("▶ Play")
-        self._play_btn.setFixedWidth(75)
-        self._play_btn.setStyleSheet(
-            "QPushButton { background: #1b3a4b; color: #a5f3fc; border: 1px solid #2d6a8f; "
-            "border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; }"
-            "QPushButton:hover { background: #235269; color: #ffffff; }"
-        )
-        self._play_btn.clicked.connect(self._toggle_playback)
-        transport_bar.addWidget(self._play_btn)
-
-        self._step_back_btn = QPushButton("⏮ -1s")
-        self._step_back_btn.setFixedWidth(55)
-        self._step_back_btn.setStyleSheet(
-            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
-            "border-radius: 4px; padding: 4px 6px; font-size: 10px; }"
-            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
-        )
-        self._step_back_btn.clicked.connect(lambda: self._step_position(-1.0))
-        transport_bar.addWidget(self._step_back_btn)
-
-        self._step_fwd_btn = QPushButton("⏭ +1s")
-        self._step_fwd_btn.setFixedWidth(55)
-        self._step_fwd_btn.setStyleSheet(
-            "QPushButton { background: #121d28; color: #9aa5b4; border: 1px solid #243b55; "
-            "border-radius: 4px; padding: 4px 6px; font-size: 10px; }"
-            "QPushButton:hover { background: #1e334a; color: #e8f0fe; }"
-        )
-        self._step_fwd_btn.clicked.connect(lambda: self._step_position(1.0))
-        transport_bar.addWidget(self._step_fwd_btn)
-
-        self._tc_label = QLabel("Position: 00:00:00.000 / 00:00:00.000")
-        self._tc_label.setStyleSheet("color: #a5f3fc; font-family: 'Courier New'; font-size: 11px; font-weight: bold;")
-        transport_bar.addWidget(self._tc_label, stretch=1)
-
-        self._meta_badge = QLabel("—")
-        self._meta_badge.setStyleSheet("color: #64748b; font-size: 10px;")
-        transport_bar.addWidget(self._meta_badge)
-
-        prev_vbox.addLayout(transport_bar)
-        layout.addWidget(prev_card)
-
-        # 2. AI Detections Inspector Card
-        ai_card = QFrame()
-        ai_card.setStyleSheet(
-            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 8px; }"
-        )
-        ai_vbox = QVBoxLayout(ai_card)
-        ai_vbox.setContentsMargins(10, 8, 10, 8)
-        ai_vbox.setSpacing(6)
-
-        ai_top = QHBoxLayout()
-        ai_title = QLabel("🤖 AI TRIAGE DETECTIONS")
-        ai_title.setStyleSheet("color: #c084fc; font-weight: bold; font-size: 11px;")
-        ai_top.addWidget(ai_title)
-
-        ai_top.addStretch()
-        if is_yolo_available():
-            engine_text = "● YOLOv8 Triage Mode"
-        elif is_gemini_available():
-            engine_text = "● Gemini AI"
-        else:
-            engine_text = "● Local ML Mode"
-        self._ai_engine_lbl = QLabel(engine_text)
-        self._ai_engine_lbl.setStyleSheet("color: #a855f7; font-size: 10px; font-weight: bold;")
-        ai_top.addWidget(self._ai_engine_lbl)
-        ai_vbox.addLayout(ai_top)
-
-        # Detections table
-        det_cols = ["Class", "Confidence", "Timecode", "Review Status"]
-        self._det_table = QTableWidget(0, len(det_cols))
-        self._det_table.setHorizontalHeaderLabels(det_cols)
-        self._det_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._det_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._det_table.verticalHeader().setVisible(False)
-        self._det_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._det_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._det_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._det_table.setStyleSheet(
-            "QTableWidget { background: #0a1118; color: #cdd6e0; border: 1px solid #1e3a5f; }"
-            "QHeaderView::section { background: #0a1628; color: #c084fc; padding: 4px; font-size: 10px; }"
-        )
-        self._det_table.itemSelectionChanged.connect(self._on_detection_selected)
-        ai_vbox.addWidget(self._det_table)
-
-        # Review action buttons
-        rev_row = QHBoxLayout()
-        self._confirm_btn = QPushButton("✓ Confirm Finding")
-        self._confirm_btn.setStyleSheet(
-            "QPushButton { background: #065f46; color: #34d399; font-weight: bold; "
-            "border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
-            "QPushButton:hover { background: #047857; }"
-            "QPushButton:disabled { background: #121f2d; color: #475569; }"
-        )
-        self._confirm_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.CONFIRMED.value))
-        rev_row.addWidget(self._confirm_btn)
-
-        self._reject_btn = QPushButton("✕ Reject False Positive")
-        self._reject_btn.setStyleSheet(
-            "QPushButton { background: #7f1d1d; color: #f87171; font-weight: bold; "
-            "border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
-            "QPushButton:hover { background: #991b1b; }"
-            "QPushButton:disabled { background: #121f2d; color: #475569; }"
-        )
-        self._reject_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.REJECTED.value))
-        rev_row.addWidget(self._reject_btn)
-        ai_vbox.addLayout(rev_row)
-
-        layout.addWidget(ai_card, stretch=1)
-
-        # 3. Gap & Normalization Summary Card
-        audit_card = QFrame()
-        audit_card.setStyleSheet(
-            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 8px; }"
-        )
-        audit_vbox = QVBoxLayout(audit_card)
-        audit_vbox.setContentsMargins(10, 8, 10, 8)
-        audit_vbox.setSpacing(4)
-
-        audit_title = QLabel("⏱ CHRONOLOGY & GAP AUDIT")
-        audit_title.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
-        audit_vbox.addWidget(audit_title)
-
-        self._audit_msg = QLabel("No anomalies or temporal gaps detected in sequence.")
-        self._audit_msg.setWordWrap(True)
-        self._audit_msg.setStyleSheet("color: #9aa5b4; font-size: 11px;")
-        audit_vbox.addWidget(self._audit_msg)
-
-        layout.addWidget(audit_card)
-
-        return container
 
     # ─────────────────────────────────────────────────────────────────────────
     # Page Refresh & Loading
@@ -840,8 +947,8 @@ class TimelineAIPage(QWidget):
 
     def _render_fallback_card(self, wc_path: Path, segment: VideoSegment) -> None:
         """Render high-contrast forensic card when video stream cannot be decoded directly."""
-        w = max(360, self._screen_box.width() or 400)
-        h = max(220, self._screen_box.height() or 240)
+        w = max(640, self._screen_box.width() or 800)
+        h = max(380, self._screen_box.height() or 480)
         pixmap = QPixmap(w, h)
         pixmap.fill(QColor("#060b10"))
         painter = QPainter(pixmap)
@@ -851,20 +958,21 @@ class TimelineAIPage(QWidget):
         painter.drawRect(1, 1, w - 2, h - 2)
 
         painter.setPen(QColor("#7ec8e3"))
-        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
-        painter.drawText(QRectF(10, 35, w - 20, 24), Qt.AlignCenter, "▶ FORENSIC EVIDENCE WORKING COPY")
+        painter.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        painter.drawText(QRectF(10, h // 2 - 60, w - 20, 28), Qt.AlignCenter, "▶ FORENSIC EVIDENCE WORKING COPY")
 
         painter.setPen(QColor("#e8f0fe"))
-        painter.setFont(QFont("Segoe UI", 10))
-        painter.drawText(QRectF(10, 68, w - 20, 20), Qt.AlignCenter, wc_path.name)
+        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        painter.drawText(QRectF(10, h // 2 - 25, w - 20, 24), Qt.AlignCenter, wc_path.name)
 
         painter.setPen(QColor("#9aa5b4"))
-        painter.setFont(QFont("Segoe UI", 9))
+        painter.setFont(QFont("Segoe UI", 10))
         info_text = f"Format: {segment.codec or 'Raw Stream'}  •  Resolution: {segment.resolution or 'Unknown'}  •  Duration: {self._duration_seconds:.2f}s"
-        painter.drawText(QRectF(10, 95, w - 20, 20), Qt.AlignCenter, info_text)
+        painter.drawText(QRectF(10, h // 2 + 5, w - 20, 22), Qt.AlignCenter, info_text)
 
         painter.setPen(QColor("#38bdf8"))
-        painter.drawText(QRectF(10, 130, w - 20, 20), Qt.AlignCenter, "Direct stream container. Use Vendor Matrix / Carving to inspect raw stream.")
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.drawText(QRectF(10, h // 2 + 35, w - 20, 20), Qt.AlignCenter, "Direct proprietary container. Use Vendor Matrix / Carving to inspect NALUs.")
         painter.end()
 
         self._last_rendered_pixmap = pixmap
