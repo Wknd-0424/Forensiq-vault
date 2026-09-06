@@ -61,7 +61,7 @@ from forensiq.services.validation_service import (
 )
 from forensiq.ui.widgets.metadata_table import MetadataTable
 from forensiq.ui.widgets.warning_panel import ErrorPanel, WarningPanel
-from forensiq.utils.utc_utils import to_iso8601
+from forensiq.utils.utc_utils import now_utc, to_iso8601
 
 logger = logging.getLogger(__name__)
 
