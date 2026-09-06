@@ -805,37 +805,46 @@ class TimelineAIPage(QWidget):
             self._needs_review_btn.setEnabled(False)
 
     def _load_timeline_data(self, evidence_id: str) -> None:
-        session = get_session()
-        try:
-            active_case_id = self._main_window.active_case_id
-            if not active_case_id:
-                return
+        active_case_id = self._main_window.active_case_id
+        if not active_case_id:
+            return
 
-            # Ensure primary VideoSegment exists
+        # Ensure primary VideoSegment exists and commit it immediately
+        with session_scope() as session:
             segment = create_or_update_segment_from_evidence(session, evidence_id)
             self._selected_segment_id = segment.id
-
-            # Check AI availability and update banner/button
-            ai_status = get_ai_status()
-            if ai_status == "unavailable":
-                self._ai_unavailable_banner.setVisible(True)
-                self._triage_btn.setEnabled(False)
-                self._triage_btn.setToolTip("AI Unavailable — model not loaded")
-            else:
-                self._ai_unavailable_banner.setVisible(False)
-                self._triage_btn.setEnabled(True)
-                self._triage_btn.setToolTip("Run AI triage on verified working copy")
-
-            # Update preview card
             dur = segment.duration_seconds or 0.0
-            mins = int(dur // 60)
-            secs = dur % 60
-            self._tc_label.setText(f"Position: 00:00:00.000 / {mins:02d}:{secs:06.3f}")
-            self._channel_tag.setText(f"Channel: {segment.channel_id or 'CH-01'}")
+            channel_id = segment.channel_id or "CH-01"
+            resolution = segment.resolution or "N/A"
+            codec = segment.codec or "N/A"
 
+        mins = int(dur // 60)
+        secs = dur % 60
+        self._tc_label.setText(f"Position: 00:00:00.000 / {mins:02d}:{secs:06.3f}")
+        self._channel_tag.setText(f"Channel: {channel_id}")
+
+        # Check AI availability and update banner/button
+        ai_status = get_ai_status()
+        if ai_status == "unavailable":
+            self._ai_unavailable_banner.setVisible(True)
+            self._triage_btn.setEnabled(False)
+            self._triage_btn.setToolTip("AI Unavailable — model not loaded")
+        else:
+            self._ai_unavailable_banner.setVisible(False)
+            self._triage_btn.setEnabled(True)
+            self._triage_btn.setToolTip("Run AI triage on verified working copy")
+
+        # Query events and detections on a read session
+        session = get_session()
+        try:
             wc_path = get_working_copy_path(session, evidence_id)
             if wc_path and wc_path.exists():
-                self._open_video_for_evidence(wc_path, segment)
+                class _SegInfo:
+                    def __init__(self, d, r, c):
+                        self.duration_seconds = d
+                        self.resolution = r
+                        self.codec = c
+                self._open_video_for_evidence(wc_path, _SegInfo(dur, resolution, codec))
             else:
                 self._stop_playback()
                 self._screen_box.clear()
@@ -858,7 +867,6 @@ class TimelineAIPage(QWidget):
             else:
                 self._audit_msg.setText("✓ Chronological sequence is continuous. No temporal gaps detected.")
                 self._audit_msg.setStyleSheet("color: #34d399; font-size: 11px;")
-
         finally:
             session.close()
 
@@ -1010,41 +1018,45 @@ class TimelineAIPage(QWidget):
 
     def _review_detection_row(self, detection_id: str, new_status: str) -> None:
         """Update reviewer status for a specific detection and update row badge immediately."""
-        session = get_session()
         try:
-            review_detection(
-                session=session,
-                detection_id=detection_id,
-                reviewer_status=new_status,
-                reviewer_id="Investigator",
-            )
-            if detection_id in self._all_detections_map:
-                self._all_detections_map[detection_id].reviewer_status = new_status
-
-            # Immediately update the row's badge in the table
-            for r in range(self._det_table.rowCount()):
-                item = self._det_table.item(r, 0)
-                if item and item.data(Qt.UserRole) == detection_id:
-                    stat_item = self._det_table.item(r, 3)
-                    if stat_item:
-                        stat_item.setText(new_status)
-                        if new_status == ReviewerStatus.CONFIRMED.value:
-                            stat_item.setForeground(QColor("#34d399"))
-                        elif new_status == ReviewerStatus.REJECTED.value:
-                            stat_item.setForeground(QColor("#f87171"))
-                        else:
-                            stat_item.setForeground(QColor("#fbbf24"))
-                    break
-
-            # Synchronize linked event in Event Ledger
-            active_case_id = self._main_window.active_case_id
-            if active_case_id:
-                events = get_case_timeline(session, active_case_id)
-                self._populate_event_table(events)
+            with session_scope() as session:
+                review_detection(
+                    session=session,
+                    detection_id=detection_id,
+                    reviewer_status=new_status,
+                    reviewer_id="Investigator",
+                )
         except Exception as exc:
             QMessageBox.critical(self, "Review Error", str(exc))
-        finally:
-            session.close()
+            return
+
+        if detection_id in self._all_detections_map:
+            self._all_detections_map[detection_id].reviewer_status = new_status
+
+        # Immediately update the row's badge in the table
+        for r in range(self._det_table.rowCount()):
+            item = self._det_table.item(r, 0)
+            if item and item.data(Qt.UserRole) == detection_id:
+                stat_item = self._det_table.item(r, 3)
+                if stat_item:
+                    stat_item.setText(new_status)
+                    if new_status == ReviewerStatus.CONFIRMED.value:
+                        stat_item.setForeground(QColor("#34d399"))
+                    elif new_status == ReviewerStatus.REJECTED.value:
+                        stat_item.setForeground(QColor("#f87171"))
+                    else:
+                        stat_item.setForeground(QColor("#fbbf24"))
+                break
+
+        # Synchronize linked event in Event Ledger
+        active_case_id = self._main_window.active_case_id
+        if active_case_id:
+            session = get_session()
+            try:
+                events = get_case_timeline(session, active_case_id)
+                self._populate_event_table(events)
+            finally:
+                session.close()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Interactivity & Actions
@@ -1392,25 +1404,25 @@ class TimelineAIPage(QWidget):
         if not self._selected_detection_id:
             return
 
-        session = get_session()
         try:
-            review_detection(
-                session=session,
-                detection_id=self._selected_detection_id,
-                reviewer_status=new_status,
-                reviewer_id="Investigator",
-            )
-            QMessageBox.information(
-                self,
-                "Review Recorded",
-                f"Detection status updated to {new_status}. Recorded into chain of custody.",
-            )
-            if self._selected_evidence_id:
-                self._load_timeline_data(self._selected_evidence_id)
+            with session_scope() as session:
+                review_detection(
+                    session=session,
+                    detection_id=self._selected_detection_id,
+                    reviewer_status=new_status,
+                    reviewer_id="Investigator",
+                )
         except Exception as exc:
             QMessageBox.critical(self, "Review Error", str(exc))
-        finally:
-            session.close()
+            return
+
+        QMessageBox.information(
+            self,
+            "Review Recorded",
+            f"Detection status updated to {new_status}. Recorded into chain of custody.",
+        )
+        if self._selected_evidence_id:
+            self._load_timeline_data(self._selected_evidence_id)
 
     def _apply_normalization(self) -> None:
         if not self._selected_evidence_id:
@@ -1422,26 +1434,37 @@ class TimelineAIPage(QWidget):
         offset = val * sign
         method = self._method_combo.currentText()
 
-        session = get_session()
         try:
-            apply_timestamp_normalization(
-                session=session,
-                evidence_id=self._selected_evidence_id,
-                offset_seconds=offset,
-                method=method,
-                actor_id="Investigator",
-            )
-            QMessageBox.information(
-                self,
-                "Normalization Applied",
-                f"Successfully shifted timeline by {offset:+.1f}s ({method}).\n"
-                "Custody action TIMESTAMP_NORMALIZATION_APPLIED recorded.",
-            )
-            self._load_timeline_data(self._selected_evidence_id)
+            with session_scope() as session:
+                apply_timestamp_normalization(
+                    session=session,
+                    evidence_id=self._selected_evidence_id,
+                    offset_seconds=offset,
+                    method=method,
+                    actor_id="Investigator",
+                )
         except Exception as exc:
             QMessageBox.critical(self, "Normalization Error", str(exc))
-        finally:
-            session.close()
+            return
+
+        # Update custody chain indicator on main window
+        if hasattr(self._main_window, "update_chain_status"):
+            from forensiq.services.custody_service import verify_chain
+            s = get_session()
+            try:
+                if self._main_window.active_case_id:
+                    res, _ = verify_chain(s, self._main_window.active_case_id)
+                    self._main_window.update_chain_status(res.value)
+            finally:
+                s.close()
+
+        QMessageBox.information(
+            self,
+            "Normalization Applied",
+            f"Successfully shifted timeline by {offset:+.1f}s ({method}).\n"
+            "Custody action TIMESTAMP_NORMALIZATION_APPLIED recorded.",
+        )
+        self._load_timeline_data(self._selected_evidence_id)
 
     def _start_ai_triage(self) -> None:
         if not self._selected_segment_id:

@@ -88,14 +88,15 @@ def get_engine() -> Engine:
     if _engine is None:
         _engine = create_engine(
             DB_URL,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30.0},
             echo=False,
         )
-        # Enable WAL mode for better concurrent read performance with SQLite
+        # Enable WAL mode, busy timeout, and foreign keys for SQLite
         @event.listens_for(_engine, "connect")
         def _set_sqlite_pragma(dbapi_conn, _connection_record):
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
