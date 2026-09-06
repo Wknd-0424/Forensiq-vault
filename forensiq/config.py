@@ -48,7 +48,9 @@ TEMPLATES_DIR: Path = PROJECT_ROOT / "forensiq" / "templates"
 FFPROBE_PATH: str = os.getenv("FFPROBE_PATH", "ffprobe").strip() or "ffprobe"
 
 # YOLO model: path to weights (.pt file)
-_candidate_yolo = PROJECT_ROOT / "forensiq" / "ml" / "models" / "yolov8n.pt"
+_candidate_yolo = PROJECT_ROOT / "forensiq" / "ai_models" / "yolov8n.pt"
+if not _candidate_yolo.exists():
+    _candidate_yolo = PROJECT_ROOT / "forensiq" / "ml" / "models" / "yolov8n.pt"
 if not _candidate_yolo.exists():
     _candidate_yolo = PROJECT_ROOT / "yolov8n.pt"
 

@@ -60,9 +60,12 @@ from forensiq.models.evidence import EvidenceItem
 from forensiq.models.timeline import TimelineEvent, VideoSegment
 from forensiq.services.adapter_service import get_working_copy_path
 from forensiq.services.ai_service import (
+    get_ai_status,
+    get_ai_status_info,
     is_gemini_available,
     is_yolo_available,
     list_detections_for_case,
+    list_detections_for_evidence,
     review_detection,
     run_ai_triage,
 )
@@ -311,7 +314,7 @@ class TimelineAIPage(QWidget):
 
         self._main_splitter.setStretchFactor(0, 6)
         self._main_splitter.setStretchFactor(1, 4)
-        self._main_splitter.setSizes([1140, 620])
+        self._main_splitter.setSizes([1040, 720])
         main_layout.addWidget(self._main_splitter, stretch=1)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -503,27 +506,53 @@ class TimelineAIPage(QWidget):
         top_row.addWidget(ai_title)
 
         top_row.addStretch()
-        if is_yolo_available():
-            engine_text = "● YOLOv8 Triage Mode"
-        elif is_gemini_available():
-            engine_text = "● Gemini AI"
-        else:
-            engine_text = "● Local ML Mode"
-        self._ai_engine_lbl = QLabel(engine_text)
+        self._ai_engine_lbl = QLabel("● Initializing AI...")
         self._ai_engine_lbl.setStyleSheet("color: #a855f7; font-size: 10px; font-weight: bold;")
         top_row.addWidget(self._ai_engine_lbl)
         layout.addLayout(top_row)
 
-        hint = QLabel("Select any detection to seek video and view bounding box:")
+        # AI Unavailable Banner (shown when YOLO model file fails to load or is missing)
+        self._ai_unavailable_banner = QFrame()
+        self._ai_unavailable_banner.setStyleSheet(
+            "QFrame { background: #3b1111; border: 1px solid #991b1b; "
+            "border-radius: 6px; padding: 6px 12px; margin-bottom: 2px; }"
+        )
+        banner_layout = QHBoxLayout(self._ai_unavailable_banner)
+        banner_layout.setContentsMargins(4, 2, 4, 2)
+        banner_icon = QLabel("⚠️")
+        banner_icon.setStyleSheet("font-size: 14px;")
+        banner_layout.addWidget(banner_icon)
+        self._banner_text = QLabel("AI Unavailable — model not loaded. Triage is disabled until weights are available.")
+        self._banner_text.setStyleSheet("color: #fca5a5; font-weight: bold; font-size: 11px;")
+        banner_layout.addWidget(self._banner_text, stretch=1)
+        self._ai_unavailable_banner.setVisible(False)
+        layout.addWidget(self._ai_unavailable_banner)
+
+        # Mandatory Forensic Disclaimer
+        disclaimer_box = QLabel(
+            "⚖️ MANDATORY DISCLAIMER: AI outputs are triage aids. False positives and false negatives "
+            "are possible. Human review is required before findings are confirmed or presented."
+        )
+        disclaimer_box.setWordWrap(True)
+        disclaimer_box.setStyleSheet(
+            "background: #091a2e; color: #7ec8e3; border: 1px solid #1e3a5f; "
+            "border-radius: 4px; padding: 5px 8px; font-size: 10px; font-weight: 500;"
+        )
+        layout.addWidget(disclaimer_box)
+
+        hint = QLabel("Select any detection to seek video and view bounding box. Review per row or below:")
         hint.setStyleSheet("color: #64748b; font-size: 10px;")
         layout.addWidget(hint)
 
-        # Detections table
-        det_cols = ["Class", "Confidence", "Timecode", "Review Status"]
+        # Detections table with per-row review action buttons
+        det_cols = ["Class", "Confidence", "Timecode", "Review Status", "Actions"]
         self._det_table = QTableWidget(0, len(det_cols))
         self._det_table.setHorizontalHeaderLabels(det_cols)
-        self._det_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._det_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self._det_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._det_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self._det_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self._det_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._det_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self._det_table.verticalHeader().setVisible(False)
         self._det_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._det_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -537,14 +566,14 @@ class TimelineAIPage(QWidget):
         self._det_table.itemSelectionChanged.connect(self._on_detection_selected)
         layout.addWidget(self._det_table, stretch=1)
 
-        # Review action box
+        # Review action box for selected detection
         rev_box = QFrame()
         rev_box.setStyleSheet("background: #0a131c; border: 1px solid #1e3a5f; border-radius: 6px; padding: 6px;")
         rev_layout = QVBoxLayout(rev_box)
         rev_layout.setContentsMargins(8, 6, 8, 6)
         rev_layout.setSpacing(6)
 
-        rev_lbl = QLabel("HUMAN ANALYST TRIAGE REVIEW:")
+        rev_lbl = QLabel("SELECTED DETECTION REVIEW:")
         rev_lbl.setStyleSheet("color: #9aa5b4; font-size: 10px; font-weight: bold;")
         rev_layout.addWidget(rev_lbl)
 
@@ -568,8 +597,18 @@ class TimelineAIPage(QWidget):
         )
         self._reject_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.REJECTED.value))
         rev_btn_row.addWidget(self._reject_btn)
-        rev_layout.addLayout(rev_btn_row)
 
+        self._needs_review_btn = QPushButton("? Needs Review")
+        self._needs_review_btn.setStyleSheet(
+            "QPushButton { background: #78350f; color: #fbbf24; font-weight: bold; "
+            "border-radius: 4px; padding: 6px 10px; font-size: 11px; }"
+            "QPushButton:hover { background: #92400e; }"
+            "QPushButton:disabled { background: #121f2d; color: #475569; }"
+        )
+        self._needs_review_btn.clicked.connect(lambda: self._review_current_detection(ReviewerStatus.NEEDS_REVIEW.value))
+        rev_btn_row.addWidget(self._needs_review_btn)
+
+        rev_layout.addLayout(rev_btn_row)
         layout.addWidget(rev_box)
         return widget
 
@@ -694,14 +733,27 @@ class TimelineAIPage(QWidget):
 
             self._evidence_combo.setEnabled(True)
             self._apply_norm_btn.setEnabled(True)
-            self._triage_btn.setEnabled(True)
 
-            if is_yolo_available():
-                self._ai_engine_lbl.setText("● YOLOv8 Triage Mode")
-            elif is_gemini_available():
-                self._ai_engine_lbl.setText("● Gemini AI")
+            ai_status = get_ai_status()
+            if ai_status == "unavailable":
+                self._ai_unavailable_banner.setVisible(True)
+                self._triage_btn.setEnabled(False)
+                self._triage_btn.setToolTip("AI Unavailable — model weights not loaded")
+                self._ai_engine_lbl.setText("● AI Unavailable")
+                self._ai_engine_lbl.setStyleSheet("color: #f87171; font-size: 10px; font-weight: bold;")
             else:
-                self._ai_engine_lbl.setText("● Local ML Mode")
+                self._ai_unavailable_banner.setVisible(False)
+                self._triage_btn.setEnabled(True)
+                self._triage_btn.setToolTip("Run AI triage on verified working copy")
+                if is_yolo_available():
+                    self._ai_engine_lbl.setText("● YOLOv8 Triage Mode")
+                    self._ai_engine_lbl.setStyleSheet("color: #a855f7; font-size: 10px; font-weight: bold;")
+                elif is_gemini_available():
+                    self._ai_engine_lbl.setText("● Gemini AI")
+                    self._ai_engine_lbl.setStyleSheet("color: #38bdf8; font-size: 10px; font-weight: bold;")
+                else:
+                    self._ai_engine_lbl.setText("● Local ML Mode")
+                    self._ai_engine_lbl.setStyleSheet("color: #a855f7; font-size: 10px; font-weight: bold;")
 
             selected_idx = 0
             for idx, item in enumerate(items):
@@ -749,6 +801,8 @@ class TimelineAIPage(QWidget):
         self._screen_box.setText("No video or evidence selected.")
         self._confirm_btn.setEnabled(False)
         self._reject_btn.setEnabled(False)
+        if hasattr(self, "_needs_review_btn"):
+            self._needs_review_btn.setEnabled(False)
 
     def _load_timeline_data(self, evidence_id: str) -> None:
         session = get_session()
@@ -760,6 +814,17 @@ class TimelineAIPage(QWidget):
             # Ensure primary VideoSegment exists
             segment = create_or_update_segment_from_evidence(session, evidence_id)
             self._selected_segment_id = segment.id
+
+            # Check AI availability and update banner/button
+            ai_status = get_ai_status()
+            if ai_status == "unavailable":
+                self._ai_unavailable_banner.setVisible(True)
+                self._triage_btn.setEnabled(False)
+                self._triage_btn.setToolTip("AI Unavailable — model not loaded")
+            else:
+                self._ai_unavailable_banner.setVisible(False)
+                self._triage_btn.setEnabled(True)
+                self._triage_btn.setToolTip("Run AI triage on verified working copy")
 
             # Update preview card
             dur = segment.duration_seconds or 0.0
@@ -776,13 +841,13 @@ class TimelineAIPage(QWidget):
                 self._screen_box.clear()
                 self._screen_box.setText("Working copy not present on disk.")
 
-            # Load timeline events
+            # Load timeline events for case
             events = get_case_timeline(session, active_case_id)
             self._timeline_widget.set_events(events, dur if dur > 0 else 60.0)
             self._populate_event_table(events)
 
-            # Load AI detections
-            detections = list_detections_for_case(session, active_case_id)
+            # Load AI detections specifically for this evidence item per spec
+            detections = list_detections_for_evidence(session, evidence_id)
             self._populate_detection_table(detections)
 
             # Run gap analysis
@@ -823,10 +888,13 @@ class TimelineAIPage(QWidget):
             self._event_table.insertRow(row_idx)
 
             # UTC Time
-            t_str = to_iso8601(ev.normalized_timestamp_utc) or "—"
+            t_str = to_iso8601(ev.normalized_timestamp_utc) if ev.normalized_timestamp_utc else "Not normalized"
             item_utc = QTableWidgetItem(t_str)
             item_utc.setFont(mono_font)
-            item_utc.setForeground(QColor("#7ec8e3"))
+            if ev.normalized_timestamp_utc:
+                item_utc.setForeground(QColor("#7ec8e3"))
+            else:
+                item_utc.setForeground(QColor("#94a3b8"))
             self._event_table.setItem(row_idx, 0, item_utc)
 
             # Raw / Offset
@@ -877,9 +945,11 @@ class TimelineAIPage(QWidget):
             self._det_table.setItem(row_idx, 0, c_item)
 
             # Confidence
-            conf_pct = f"{d.confidence * 100:.1f}%"
-            conf_item = QTableWidgetItem(conf_pct)
+            conf_str = f"{d.confidence:.2f}"
+            conf_item = QTableWidgetItem(conf_str)
+            conf_item.setFont(mono_font)
             conf_item.setTextAlignment(Qt.AlignCenter)
+            conf_item.setForeground(QColor("#a5f3fc"))
             self._det_table.setItem(row_idx, 1, conf_item)
 
             # Timecode
@@ -887,8 +957,9 @@ class TimelineAIPage(QWidget):
             tc_item.setFont(mono_font)
             self._det_table.setItem(row_idx, 2, tc_item)
 
-            # Review Status
+            # Review Status Badge
             stat_item = QTableWidgetItem(d.reviewer_status)
+            stat_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
             stat_item.setTextAlignment(Qt.AlignCenter)
             if d.reviewer_status == ReviewerStatus.CONFIRMED.value:
                 stat_item.setForeground(QColor("#34d399"))
@@ -898,8 +969,82 @@ class TimelineAIPage(QWidget):
                 stat_item.setForeground(QColor("#fbbf24"))
             self._det_table.setItem(row_idx, 3, stat_item)
 
-            # Attach detection ID
+            # Per-row Review Action Buttons: Confirm / Reject / Needs Review
+            act_widget = QWidget()
+            act_layout = QHBoxLayout(act_widget)
+            act_layout.setContentsMargins(1, 1, 1, 1)
+            act_layout.setSpacing(3)
+
+            btn_conf = QPushButton("✓ Confirm")
+            btn_conf.setStyleSheet(
+                "QPushButton { background: #064e3b; color: #34d399; font-weight: bold; "
+                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #059669; }"
+                "QPushButton:hover { background: #047857; color: #ffffff; }"
+            )
+            btn_conf.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.CONFIRMED.value))
+            act_layout.addWidget(btn_conf)
+
+            btn_rej = QPushButton("✕ Reject")
+            btn_rej.setStyleSheet(
+                "QPushButton { background: #450a0a; color: #f87171; font-weight: bold; "
+                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #dc2626; }"
+                "QPushButton:hover { background: #991b1b; color: #ffffff; }"
+            )
+            btn_rej.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.REJECTED.value))
+            act_layout.addWidget(btn_rej)
+
+            btn_rev = QPushButton("? Review")
+            btn_rev.setToolTip("Mark as Needs Review")
+            btn_rev.setStyleSheet(
+                "QPushButton { background: #451a03; color: #fbbf24; font-weight: bold; "
+                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #d97706; }"
+                "QPushButton:hover { background: #92400e; color: #ffffff; }"
+            )
+            btn_rev.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.NEEDS_REVIEW.value))
+            act_layout.addWidget(btn_rev)
+
+            self._det_table.setCellWidget(row_idx, 4, act_widget)
+
+            # Attach detection ID to item
             c_item.setData(Qt.UserRole, d.id)
+
+    def _review_detection_row(self, detection_id: str, new_status: str) -> None:
+        """Update reviewer status for a specific detection and update row badge immediately."""
+        session = get_session()
+        try:
+            review_detection(
+                session=session,
+                detection_id=detection_id,
+                reviewer_status=new_status,
+                reviewer_id="Investigator",
+            )
+            if detection_id in self._all_detections_map:
+                self._all_detections_map[detection_id].reviewer_status = new_status
+
+            # Immediately update the row's badge in the table
+            for r in range(self._det_table.rowCount()):
+                item = self._det_table.item(r, 0)
+                if item and item.data(Qt.UserRole) == detection_id:
+                    stat_item = self._det_table.item(r, 3)
+                    if stat_item:
+                        stat_item.setText(new_status)
+                        if new_status == ReviewerStatus.CONFIRMED.value:
+                            stat_item.setForeground(QColor("#34d399"))
+                        elif new_status == ReviewerStatus.REJECTED.value:
+                            stat_item.setForeground(QColor("#f87171"))
+                        else:
+                            stat_item.setForeground(QColor("#fbbf24"))
+                    break
+
+            # Synchronize linked event in Event Ledger
+            active_case_id = self._main_window.active_case_id
+            if active_case_id:
+                events = get_case_timeline(session, active_case_id)
+                self._populate_event_table(events)
+        except Exception as exc:
+            QMessageBox.critical(self, "Review Error", str(exc))
+        finally:
+            session.close()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Interactivity & Actions
@@ -1046,36 +1191,46 @@ class TimelineAIPage(QWidget):
                             pass
 
             for b, tag_text, c_type in boxes_to_draw:
-                bx = int(b[0] * W)
-                by = int(b[1] * H)
-                bw = int(b[2] * W)
-                bh = int(b[3] * H)
+                if len(b) < 4:
+                    continue
+                x1, y1, x2, y2 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
+                # Support both normalized [0..1] and pixel coordinates [x1, y1, x2, y2]
+                if max(x1, x2) <= 1.0 and max(y1, y2) <= 1.0:
+                    bx1 = int(x1 * W)
+                    by1 = int(y1 * H)
+                    bx2 = int(x2 * W)
+                    by2 = int(y2 * H)
+                else:
+                    bx1 = int(x1)
+                    by1 = int(y1)
+                    bx2 = int(x2)
+                    by2 = int(y2)
 
-                bx = max(0, min(W - 1, bx))
-                by = max(0, min(H - 1, by))
-                bw = max(1, min(W - bx, bw))
-                bh = max(1, min(H - by, bh))
+                bx1 = max(0, min(W - 1, bx1))
+                by1 = max(0, min(H - 1, by1))
+                bx2 = max(bx1 + 1, min(W, bx2))
+                by2 = max(by1 + 1, min(H, by2))
 
                 if c_type == "person":
                     box_color = (255, 215, 0)  # Bright Cyan / Aqua in BGR
-                elif c_type == "vehicle":
+                elif c_type in ("vehicle", "car", "truck", "bus", "motorcycle"):
                     box_color = (0, 165, 255)  # Amber / Orange in BGR
                 else:
                     box_color = (0, 240, 255)  # Bright Yellow in BGR
 
-                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), box_color, 2)
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 2)
 
                 font_scale = 0.50
                 thickness = 1
                 (tw, th), _ = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-                tag_y1 = max(0, by - th - 8)
-                tag_y2 = by
-                tag_x2 = min(W, bx + tw + 10)
-                cv2.rectangle(frame, (bx, tag_y1), (tag_x2, tag_y2), box_color, -1)
+                tag_y1 = max(0, by1 - th - 8)
+                tag_y2 = by1
+                tag_x2 = min(W, bx1 + tw + 10)
+                cv2.rectangle(frame, (bx1, tag_y1), (tag_x2, tag_y2), box_color, -1)
                 cv2.putText(
                     frame,
                     tag_text,
-                    (bx + 5, tag_y2 - 4),
+                    (bx1 + 5, max(12, tag_y2 - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale,
                     (10, 15, 20),

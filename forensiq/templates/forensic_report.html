@@ -389,10 +389,13 @@
   <!-- AI Triage Findings -->
   <h2>5. AI-Assisted Triage & Anomaly Analysis</h2>
   <div class="notice">
-    <strong>MANDATORY FORENSIC DISCLAIMER:</strong> AI outputs are triage aids designed to accelerate investigative review. 
-    False positives and false negatives are possible. Human review is mandatory before any finding is admitted into evidence. 
-    Biometric facial recognition is strictly prohibited and was not executed.
+    <strong>MANDATORY FORENSIC DISCLAIMER:</strong> AI outputs are triage aids. False positives and false negatives are possible. Human review is required before any finding is admitted into evidence or considered legally conclusive. Biometric facial recognition is strictly prohibited and was not executed.
   </div>
+
+  <h3 style="color: var(--accent-green); font-size: 13px; margin-top: 20px; margin-bottom: 6px;">5.1 Analyst-Confirmed Findings</h3>
+  <p style="font-size: 12px; color: var(--text-muted); margin-top: 0; margin-bottom: 8px;">
+    Findings reviewed and confirmed by a human forensic examiner. Only confirmed findings are elevated to formal case evidence.
+  </p>
   <table>
     <thead>
       <tr>
@@ -400,32 +403,69 @@
         <th>Class</th>
         <th>Confidence</th>
         <th>Frame / Timecode</th>
-        <th>Human Review Status</th>
-        <th>Reviewer Notes</th>
+        <th>Review Status</th>
+        <th>Reviewer / Notes</th>
       </tr>
     </thead>
     <tbody>
-      {% for det in ai_detections %}
+      {% for det in ai_confirmed_findings %}
       <tr>
         <td class="mono">{{ det.id[:8] }}…</td>
         <td><strong>{{ det.class_name|upper }}</strong></td>
         <td>{{ "%.1f%%"|format(det.confidence * 100) }}</td>
         <td>{{ det.frame_timestamp or "Frame #" ~ det.frame_number }}</td>
         <td>
-          {% if det.reviewer_status == 'CONFIRMED' %}
           <span style="color: var(--accent-green); font-weight: bold;">CONFIRMED</span>
-          {% elif det.reviewer_status == 'REJECTED' %}
-          <span style="color: var(--accent-red); font-weight: bold;">REJECTED</span>
-          {% else %}
-          <span style="color: var(--accent-amber); font-weight: bold;">PENDING REVIEW</span>
-          {% endif %}
         </td>
-        <td>{{ det.reviewer_notes or "—" }}</td>
+        <td>{{ det.reviewer_id or "Investigator" }}{% if det.reviewer_notes %}: {{ det.reviewer_notes }}{% endif %}</td>
       </tr>
       {% else %}
       <tr>
         <td colspan="6" style="text-align: center; color: var(--text-muted);">
-          No AI triage detections recorded for this case.
+          No analyst-confirmed AI findings recorded for this case.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3 style="color: var(--accent-amber); font-size: 13px; margin-top: 24px; margin-bottom: 6px;">5.2 AI-Assisted Preliminary Annotations</h3>
+  <p style="font-size: 12px; color: var(--text-muted); margin-top: 0; margin-bottom: 8px;">
+    Preliminary detections pending human analyst review or marked as needing review. These are investigative triage leads only and are NEVER treated as confirmed evidence.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Detection ID</th>
+        <th>Class</th>
+        <th>Confidence</th>
+        <th>Frame / Timecode</th>
+        <th>Review Status</th>
+        <th>Reviewer / Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for det in ai_preliminary_annotations %}
+      <tr>
+        <td class="mono">{{ det.id[:8] }}…</td>
+        <td><strong>{{ det.class_name|upper }}</strong></td>
+        <td>{{ "%.1f%%"|format(det.confidence * 100) }}</td>
+        <td>{{ det.frame_timestamp or "Frame #" ~ det.frame_number }}</td>
+        <td>
+          {% if det.reviewer_status == 'REJECTED' %}
+          <span style="color: var(--accent-red); font-weight: bold;">REJECTED</span>
+          {% elif det.reviewer_status == 'NEEDS_REVIEW' %}
+          <span style="color: var(--accent-amber); font-weight: bold;">NEEDS REVIEW</span>
+          {% else %}
+          <span style="color: var(--accent-amber); font-weight: bold;">PENDING</span>
+          {% endif %}
+        </td>
+        <td>{{ det.reviewer_id or "—" }}{% if det.reviewer_notes %}: {{ det.reviewer_notes }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" style="text-align: center; color: var(--text-muted);">
+          No preliminary AI triage annotations pending review.
         </td>
       </tr>
       {% endfor %}

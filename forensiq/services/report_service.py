@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 import forensiq.config as _cfg
 from forensiq.config import TOOL_VERSION
-from forensiq.constants import ChainVerificationResult, CustodyAction
+from forensiq.constants import ChainVerificationResult, CustodyAction, ReviewerStatus
 from forensiq.models.case import Case
 from forensiq.models.custody import CustodyEvent
 from forensiq.models.detection import AIDetection
@@ -165,6 +165,9 @@ def _collect_report_data(session: Session, case_id: str, actor_id: str = "Invest
         for te in timeline_events_raw
     ]
 
+    ai_confirmed = [d for d in ai_detections_raw if d.reviewer_status == ReviewerStatus.CONFIRMED.value]
+    ai_preliminary = [d for d in ai_detections_raw if d.reviewer_status != ReviewerStatus.CONFIRMED.value]
+
     return {
         "case": case,
         "chain_status": chain_status,
@@ -177,6 +180,8 @@ def _collect_report_data(session: Session, case_id: str, actor_id: str = "Invest
         "timeline_events_raw": timeline_events_raw,
         "timeline_events": timeline_events_data,
         "ai_detections": ai_detections_raw,
+        "ai_confirmed_findings": ai_confirmed,
+        "ai_preliminary_annotations": ai_preliminary,
     }
 
 
@@ -194,6 +199,8 @@ def _render_html_report(data: dict[str, Any], timestamp_str: str) -> str:
         "evidence_analysis": data["evidence_analysis"],
         "timeline_events": data["timeline_events"],
         "ai_detections": data["ai_detections"],
+        "ai_confirmed_findings": data["ai_confirmed_findings"],
+        "ai_preliminary_annotations": data["ai_preliminary_annotations"],
         "custody_events": data["custody_events"],
     }
     return template.render(**context)
