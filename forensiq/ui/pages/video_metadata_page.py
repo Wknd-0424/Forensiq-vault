@@ -153,29 +153,38 @@ class VideoMetadataPage(QWidget):
 
     def _build_ui(self) -> None:
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 20, 24, 20)
-        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(20, 14, 20, 14)
+        main_layout.setSpacing(10)
 
-        # 1. Header
-        header_vbox = QVBoxLayout()
-        header_vbox.setSpacing(4)
-        title_lbl = QLabel("Video & Stream Metadata Analysis")
+        # 1. Header Bar with integrated Forensic Invariant Badge
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+
+        header_box = QVBoxLayout()
+        header_box.setSpacing(2)
+        title_lbl = QLabel("Video Stream & Container Metadata Analysis")
         title_lbl.setObjectName("page_title")
-        header_vbox.addWidget(title_lbl)
+        title_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #e8f0fe;")
+        header_box.addWidget(title_lbl)
 
         subtitle_lbl = QLabel(
             "ffprobe stream parsing, vendor adapter detection, and automated forensic validation."
         )
         subtitle_lbl.setObjectName("page_subtitle")
-        header_vbox.addWidget(subtitle_lbl)
-        main_layout.addLayout(header_vbox)
+        subtitle_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
+        header_box.addWidget(subtitle_lbl)
+        header_row.addLayout(header_box, stretch=1)
 
-        # 2. Forensic Notice
-        notice = WarningPanel(
-            "FORENSIC INVARIANT: All extraction and validation operations run strictly "
-            "on the hash-verified Working Copy. Original vaulted evidence remains read-only and untouched."
+        # Forensic invariant badge (compact top-right pill)
+        invariant_badge = QLabel(
+            "🛡 FORENSIC INVARIANT: All extraction runs strictly on hash-verified Working Copy"
         )
-        main_layout.addWidget(notice)
+        invariant_badge.setStyleSheet(
+            "background: #091a2e; color: #7ec8e3; border: 1px solid #1e3a5f; "
+            "border-radius: 6px; padding: 6px 14px; font-size: 11px; font-weight: 500;"
+        )
+        header_row.addWidget(invariant_badge)
+        main_layout.addLayout(header_row)
 
         # ffprobe warning panel (only visible if ffprobe is missing)
         self._ffprobe_warn = ErrorPanel(
@@ -186,46 +195,52 @@ class VideoMetadataPage(QWidget):
         self._ffprobe_warn.setVisible(not is_ffprobe_available())
         main_layout.addWidget(self._ffprobe_warn)
 
-        # 3. Control & Selector Bar
+        # 2. Control & Selector Bar with Inline Status
         control_card = QFrame()
         control_card.setStyleSheet(
             "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 6px; }"
+            "border-radius: 8px; padding: 4px 8px; }"
         )
         control_layout = QHBoxLayout(control_card)
-        control_layout.setContentsMargins(12, 10, 12, 10)
-        control_layout.setSpacing(12)
+        control_layout.setContentsMargins(12, 6, 12, 6)
+        control_layout.setSpacing(10)
 
         sel_lbl = QLabel("Select Evidence:")
-        sel_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 12px;")
+        sel_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
         control_layout.addWidget(sel_lbl)
 
         self._evidence_combo = QComboBox()
-        self._evidence_combo.setMinimumWidth(320)
+        self._evidence_combo.setMinimumWidth(380)
         self._evidence_combo.setStyleSheet(
             "QComboBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 12px; }"
+            "border-radius: 4px; padding: 5px 12px; font-size: 11px; }"
             "QComboBox::drop-down { border: none; }"
             "QComboBox QAbstractItemView { background: #0d1821; color: #e8f0fe; selection-background-color: #1e3a5f; }"
         )
         self._evidence_combo.currentIndexChanged.connect(self._on_evidence_selected)
         control_layout.addWidget(self._evidence_combo)
+        self._ev_selector = self._evidence_combo  # Script compatibility alias
 
         refresh_btn = QPushButton("↻ Refresh")
         refresh_btn.setStyleSheet(
             "QPushButton { background: #1a2332; color: #9aa5b4; border: 1px solid #2d4a6a; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 12px; }"
+            "border-radius: 4px; padding: 5px 12px; font-size: 11px; }"
             "QPushButton:hover { background: #223046; color: #e8f0fe; }"
         )
         refresh_btn.clicked.connect(self.refresh)
         control_layout.addWidget(refresh_btn)
+
+        # Inline Status Label
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet("color: #38bdf8; font-size: 11px; font-weight: 500; margin-left: 8px;")
+        control_layout.addWidget(self._status_lbl)
 
         control_layout.addStretch()
 
         self._analyze_btn = QPushButton("🔍 Analyze Working Copy")
         self._analyze_btn.setStyleSheet(
             "QPushButton { background: #0284c7; color: #ffffff; font-weight: bold; "
-            "border-radius: 4px; padding: 7px 16px; font-size: 12px; }"
+            "border-radius: 4px; padding: 6px 16px; font-size: 11px; }"
             "QPushButton:hover { background: #0369a1; }"
             "QPushButton:disabled { background: #1e2d3d; color: #64748b; }"
         )
@@ -235,7 +250,7 @@ class VideoMetadataPage(QWidget):
         self._validate_btn = QPushButton("🛡 Run Forensic Validation")
         self._validate_btn.setStyleSheet(
             "QPushButton { background: #059669; color: #ffffff; font-weight: bold; "
-            "border-radius: 4px; padding: 7px 16px; font-size: 12px; }"
+            "border-radius: 4px; padding: 6px 16px; font-size: 11px; }"
             "QPushButton:hover { background: #047857; }"
             "QPushButton:disabled { background: #1e2d3d; color: #64748b; }"
         )
@@ -247,31 +262,26 @@ class VideoMetadataPage(QWidget):
         # Progress bar
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 0)  # indeterminate
-        self._progress_bar.setFixedHeight(6)
+        self._progress_bar.setFixedHeight(3)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(
-            "QProgressBar { background: #12181f; border-radius: 3px; border: none; }"
-            "QProgressBar::chunk { background: #38bdf8; border-radius: 3px; }"
+            "QProgressBar { background: #12181f; border-radius: 1px; border: none; }"
+            "QProgressBar::chunk { background: #38bdf8; border-radius: 1px; }"
         )
         self._progress_bar.setVisible(False)
         main_layout.addWidget(self._progress_bar)
 
-        # Status Label
-        self._status_lbl = QLabel("")
-        self._status_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px; margin-left: 4px;")
-        main_layout.addWidget(self._status_lbl)
-
-        # 4. Summary Metric Cards
+        # 3. Compact KPI Summary Metric Cards (Sleek 2x2 layout per card)
         self._summary_frame = self._build_summary_cards()
         main_layout.addWidget(self._summary_frame)
 
-        # 5. Deep-Dive Tabs
+        # 4. Deep-Dive Tabs (Structured Metadata, Validation Suite, Raw JSON)
         self._tabs = QTabWidget()
         self._tabs.setStyleSheet(
             "QTabWidget::pane { border: 1px solid #1e3a5f; background: #0a1118; border-radius: 6px; }"
-            "QTabBar::tab { background: #0d1821; color: #9aa5b4; padding: 8px 18px; "
+            "QTabBar::tab { background: #0d1821; color: #9aa5b4; padding: 7px 18px; "
             "border: 1px solid #1e3a5f; border-bottom: none; border-top-left-radius: 4px; "
-            "border-top-right-radius: 4px; font-size: 12px; font-weight: 600; margin-right: 4px; }"
+            "border-top-right-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px; }"
             "QTabBar::tab:selected { background: #122132; color: #38bdf8; border-bottom: 2px solid #38bdf8; }"
             "QTabBar::tab:hover:!selected { background: #152233; color: #e8f0fe; }"
         )
@@ -298,7 +308,7 @@ class VideoMetadataPage(QWidget):
         container = QWidget()
         layout = QGridLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
         # Card 1: Container
         card1, self._c_fmt, self._c_dur, self._c_size, self._c_br = self._create_card(
@@ -332,33 +342,33 @@ class VideoMetadataPage(QWidget):
 
     def _create_card(self, title: str, fields: list[tuple[str, str]]) -> tuple[QFrame, ...]:
         card = QFrame()
+        card.setFixedHeight(118)
+        card.setObjectName("summary_metric_card")
         card.setStyleSheet(
-            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
-            "border-radius: 8px; padding: 8px; }"
+            "QFrame#summary_metric_card { background: #0d1821; border: 1px solid #1e3a5f; "
+            "border-radius: 6px; }"
         )
         vbox = QVBoxLayout(card)
-        vbox.setContentsMargins(10, 8, 10, 8)
-        vbox.setSpacing(6)
+        vbox.setContentsMargins(12, 8, 12, 8)
+        vbox.setSpacing(3)
 
         title_lbl = QLabel(title)
         title_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px; letter-spacing: 0.5px;")
         vbox.addWidget(title_lbl)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: #1e3a5f; margin-bottom: 2px;")
-        vbox.addWidget(sep)
-
         value_labels = []
         for label_text, default_val in fields:
             row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
             lbl = QLabel(label_text)
             lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
             val = QLabel(default_val)
             val.setStyleSheet("color: #e8f0fe; font-size: 11px; font-weight: 600;")
             val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            val.setTextInteractionFlags(Qt.TextSelectableByMouse)
             row.addWidget(lbl)
-            row.addWidget(val)
+            row.addWidget(val, stretch=1)
             vbox.addLayout(row)
             value_labels.append(val)
 

@@ -384,38 +384,44 @@ class CustodyReportPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(14)
+        root.setContentsMargins(20, 14, 20, 14)
+        root.setSpacing(10)
 
         # ── Page Header ────────────────────────────────────────────────────
         header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
+
         title_box = QVBoxLayout()
+        title_box.setSpacing(2)
         title = QLabel("⛓  Chain of Custody & Cryptographic Audit Ledger")
-        title.setStyleSheet("color: #e8f0fe; font-size: 20px; font-weight: bold;")
+        title.setObjectName("page_title")
+        title.setStyleSheet("color: #e8f0fe; font-size: 18px; font-weight: bold;")
         subtitle = QLabel("Append-only, SHA-256 hash-linked immutable forensic audit trail.")
-        subtitle.setStyleSheet("color: #9aa5b4; font-size: 12px;")
+        subtitle.setObjectName("page_subtitle")
+        subtitle.setStyleSheet("color: #9aa5b4; font-size: 11px;")
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
-        header_layout.addLayout(title_box)
-        header_layout.addStretch()
+        header_layout.addLayout(title_box, stretch=1)
 
-        # Stats chips
+        # Stats chips & Tamper-Evident Pill
+        pill_box = QHBoxLayout()
+        pill_box.setSpacing(8)
+
+        notice_pill = QLabel("🛡 TAMPER-EVIDENT: SHA-256 Chained Ledger")
+        notice_pill.setStyleSheet(
+            "background: #091a2e; color: #7ec8e3; border: 1px solid #1e3a5f; "
+            "padding: 5px 12px; border-radius: 6px; font-weight: 500; font-size: 11px;"
+        )
+        pill_box.addWidget(notice_pill)
+
         self._blocks_count_lbl = QLabel("Events: 0")
         self._blocks_count_lbl.setStyleSheet(
-            "background: #12181f; color: #7ec8e3; border: 1px solid #1e3a5f; "
-            "padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 12px;"
+            "background: #12181f; color: #38bdf8; border: 1px solid #1e3a5f; "
+            "padding: 5px 12px; border-radius: 6px; font-weight: bold; font-size: 11px;"
         )
-        header_layout.addWidget(self._blocks_count_lbl)
-
+        pill_box.addWidget(self._blocks_count_lbl)
+        header_layout.addLayout(pill_box)
         root.addLayout(header_layout)
-
-        # Mandatory forensic notice
-        root.addWidget(WarningPanel(
-            "TAMPER-EVIDENT AUDIT NOTICE — This custody ledger is tamper-evident within "
-            "the application using SHA-256 hash chaining. Stronger protection requires "
-            "protected backups, independently stored checkpoints, and strict "
-            "organisation-level forensic chain-of-custody standard operating procedures."
-        ))
 
         # No-case warning
         self._no_case_panel = ErrorPanel(
@@ -423,121 +429,126 @@ class CustodyReportPage(QWidget):
         )
         root.addWidget(self._no_case_panel)
 
-        # ── Verification & Control Banner ──────────────────────────────────
+        # ── Unified Verification, Actions & Filters Banner ──────────────────
         banner = QFrame()
         banner.setStyleSheet(
-            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; border-radius: 8px; }"
+            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; border-radius: 8px; padding: 2px; }"
         )
-        banner_layout = QHBoxLayout(banner)
-        banner_layout.setContentsMargins(16, 12, 16, 12)
-        banner_layout.setSpacing(12)
+        banner_vbox = QVBoxLayout(banner)
+        banner_vbox.setContentsMargins(12, 8, 12, 8)
+        banner_vbox.setSpacing(8)
 
-        verify_box = QVBoxLayout()
-        verify_row = QHBoxLayout()
+        # Row 1: Verification Controls (Left) & Actions (Right)
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
 
         self._verify_btn = QPushButton("🔍  Verify Cryptographic Chain")
-        self._verify_btn.setFixedHeight(34)
+        self._verify_btn.setFixedHeight(30)
         self._verify_btn.setStyleSheet(
             "QPushButton { background: #1e5b8a; color: #e8f0fe; font-weight: bold; "
-            "border: 1px solid #2d6a9f; border-radius: 5px; padding: 0 16px; font-size: 12px; }"
+            "border: 1px solid #2d6a9f; border-radius: 4px; padding: 0 14px; font-size: 11px; }"
             "QPushButton:hover { background: #2a7ab5; }"
         )
         self._verify_btn.clicked.connect(self._verify_chain_action)
-        verify_row.addWidget(self._verify_btn)
+        row1.addWidget(self._verify_btn)
 
         self._status_badge = QLabel("UNVERIFIED")
         self._status_badge.setStyleSheet(
             "background: #1e2d3d; color: #9aa5b4; border: 1px solid #374151; "
-            "padding: 4px 14px; border-radius: 6px; font-weight: bold; font-size: 11px;"
+            "padding: 4px 12px; border-radius: 4px; font-weight: bold; font-size: 11px;"
         )
-        verify_row.addWidget(self._status_badge)
-        verify_row.addStretch()
-        verify_box.addLayout(verify_row)
+        row1.addWidget(self._status_badge)
 
         self._verification_detail_lbl = QLabel("Click verify to validate sequential hash links.")
-        self._verification_detail_lbl.setStyleSheet("color: #6b7280; font-size: 11px; margin-top: 2px;")
-        verify_box.addWidget(self._verification_detail_lbl)
-        banner_layout.addLayout(verify_box, stretch=3)
+        self._verification_detail_lbl.setStyleSheet("color: #6b7280; font-size: 11px; margin-left: 4px;")
+        row1.addWidget(self._verification_detail_lbl)
 
-        # Right side action buttons
-        actions_box = QHBoxLayout()
+        row1.addStretch()
+
         self._generate_report_btn = QPushButton("📜  Generate Forensic Report")
-        self._generate_report_btn.setFixedHeight(34)
+        self._generate_report_btn.setFixedHeight(30)
         self._generate_report_btn.setStyleSheet(
             "QPushButton { background: #065f46; color: #34d399; border: 1px solid #059669; "
-            "border-radius: 5px; padding: 0 14px; font-weight: bold; }"
+            "border-radius: 4px; padding: 0 12px; font-weight: bold; font-size: 11px; }"
             "QPushButton:hover { background: #047857; }"
         )
         self._generate_report_btn.clicked.connect(self._open_generate_report_dialog)
-        actions_box.addWidget(self._generate_report_btn)
+        row1.addWidget(self._generate_report_btn)
 
         self._record_btn = QPushButton("➕  Record Custody Event")
-        self._record_btn.setFixedHeight(34)
+        self._record_btn.setFixedHeight(30)
         self._record_btn.setStyleSheet(
             "QPushButton { background: #164e63; color: #38bdf8; border: 1px solid #0891b2; "
-            "border-radius: 5px; padding: 0 14px; font-weight: bold; }"
+            "border-radius: 4px; padding: 0 12px; font-weight: bold; font-size: 11px; }"
             "QPushButton:hover { background: #155e75; }"
         )
         self._record_btn.clicked.connect(self._open_record_dialog)
-        actions_box.addWidget(self._record_btn)
+        row1.addWidget(self._record_btn)
 
         self._export_json_btn = QPushButton("⎘  Export JSON")
-        self._export_json_btn.setFixedHeight(34)
+        self._export_json_btn.setFixedHeight(30)
         self._export_json_btn.setStyleSheet(
             "QPushButton { background: #1e2d3d; color: #7ec8e3; border: 1px solid #2d4a6a; "
-            "border-radius: 5px; padding: 0 12px; }"
+            "border-radius: 4px; padding: 0 10px; font-size: 11px; }"
             "QPushButton:hover { background: #2a4a6a; }"
         )
         self._export_json_btn.clicked.connect(self._export_json)
-        actions_box.addWidget(self._export_json_btn)
+        row1.addWidget(self._export_json_btn)
 
         self._export_csv_btn = QPushButton("📄  Export CSV")
-        self._export_csv_btn.setFixedHeight(34)
+        self._export_csv_btn.setFixedHeight(30)
         self._export_csv_btn.setStyleSheet(
             "QPushButton { background: #1e2d3d; color: #7ec8e3; border: 1px solid #2d4a6a; "
-            "border-radius: 5px; padding: 0 12px; }"
+            "border-radius: 4px; padding: 0 10px; font-size: 11px; }"
             "QPushButton:hover { background: #2a4a6a; }"
         )
         self._export_csv_btn.clicked.connect(self._export_csv)
-        actions_box.addWidget(self._export_csv_btn)
+        row1.addWidget(self._export_csv_btn)
 
-        banner_layout.addLayout(actions_box)
-        root.addWidget(banner)
+        banner_vbox.addLayout(row1)
 
-        # ── Filters Toolbar ────────────────────────────────────────────────
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(10)
+        # Row 2: Inline Filter Bar
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
 
-        filter_lbl = QLabel("Filter:")
-        filter_lbl.setStyleSheet("color: #9aa5b4; font-weight: bold; font-size: 11px;")
-        toolbar.addWidget(filter_lbl)
+        filter_lbl = QLabel("Filter Exhibits:")
+        filter_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
+        row2.addWidget(filter_lbl)
 
         combo_style = (
             "background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
-            "border-radius: 4px; padding: 4px 8px; font-size: 11px;"
+            "border-radius: 4px; padding: 3px 8px; font-size: 11px;"
         )
 
         self._evidence_filter = QComboBox()
+        self._evidence_filter.setMinimumWidth(260)
         self._evidence_filter.setStyleSheet(combo_style)
         self._evidence_filter.addItem("All Evidence Items", None)
         self._evidence_filter.currentIndexChanged.connect(self._apply_filters)
-        toolbar.addWidget(self._evidence_filter)
+        row2.addWidget(self._evidence_filter)
+
+        action_lbl = QLabel("Filter Actions:")
+        action_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px; margin-left: 10px;")
+        row2.addWidget(action_lbl)
 
         self._action_filter = QComboBox()
+        self._action_filter.setMinimumWidth(200)
         self._action_filter.setStyleSheet(combo_style)
         self._action_filter.addItem("All Actions", None)
         for action in CustodyAction:
             self._action_filter.addItem(action.value, action.value)
         self._action_filter.currentIndexChanged.connect(self._apply_filters)
-        toolbar.addWidget(self._action_filter)
+        row2.addWidget(self._action_filter)
 
-        toolbar.addStretch()
-        root.addLayout(toolbar)
+        row2.addStretch()
+        banner_vbox.addLayout(row2)
+
+        root.addWidget(banner)
 
         # ── Splitter: Ledger Table | Event Detail Inspector ───────────────
         splitter = QSplitter(Qt.Vertical)
-        splitter.setHandleWidth(6)
-        splitter.setStyleSheet("QSplitter::handle { background: #1e3a5f; }")
+        splitter.setHandleWidth(4)
+        splitter.setStyleSheet("QSplitter::handle { background: #1e3a5f; height: 4px; }")
 
         # Table container
         table_container = QWidget()
@@ -546,8 +557,15 @@ class CustodyReportPage(QWidget):
 
         self._table = QTableWidget(0, len(_COLUMNS))
         self._table.setHorizontalHeaderLabels(_COLUMNS)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setStretchLastSection(True)
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # #
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Timestamp UTC
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Action
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Actor / Officer
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Evidence Item
+        header.setSectionResizeMode(5, QHeaderView.Stretch)           # Output SHA-256
+        header.setSectionResizeMode(6, QHeaderView.Stretch)           # Previous Link
+        header.setSectionResizeMode(7, QHeaderView.Stretch)           # Event Hash
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -557,9 +575,9 @@ class CustodyReportPage(QWidget):
             "QTableWidget { background: #0d1821; color: #cdd6e0; "
             "gridline-color: #1e3a5f; border: 1px solid #1e3a5f; border-radius: 6px; }"
             "QHeaderView::section { background: #0a1628; color: #7ec8e3; "
-            "border-bottom: 1px solid #1e3a5f; padding: 6px; font-weight: bold; }"
+            "border-bottom: 1px solid #1e3a5f; padding: 6px; font-weight: bold; font-size: 11px; }"
             "QTableWidget::item:alternate { background: #0a1628; }"
-            "QTableWidget::item:selected { background: #1e3a5f; }"
+            "QTableWidget::item:selected { background: #1e3a5f; color: #ffffff; }"
         )
         self._table.itemSelectionChanged.connect(self._on_row_selected)
         table_layout.addWidget(self._table)
@@ -569,7 +587,9 @@ class CustodyReportPage(QWidget):
         self._inspector = self._build_inspector()
         splitter.addWidget(self._inspector)
 
-        splitter.setSizes([460, 240])
+        splitter.setStretchFactor(0, 7)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([640, 240])
         root.addWidget(splitter, stretch=1)
 
     def _build_inspector(self) -> QWidget:
@@ -764,7 +784,7 @@ class CustodyReportPage(QWidget):
 
             # 5: Output SHA-256 (partial)
             out_sha = ev.output_sha256 or ""
-            out_txt = out_sha[:12] + "…" if len(out_sha) > 12 else out_sha or "—"
+            out_txt = out_sha[:18] + "…" if len(out_sha) > 18 else out_sha or "—"
             item5 = self._set_cell(row_idx, 5, out_txt, Qt.AlignCenter)
             item5.setFont(mono_font)
             if out_sha:
@@ -772,7 +792,7 @@ class CustodyReportPage(QWidget):
 
             # 6: Previous Link (partial)
             prev = ev.previous_event_hash or ""
-            prev_txt = prev[:12] + "…" if len(prev) > 12 else (prev if prev else "GENESIS")
+            prev_txt = prev[:18] + "…" if len(prev) > 18 else (prev if prev else "GENESIS")
             item6 = self._set_cell(row_idx, 6, prev_txt, Qt.AlignCenter)
             item6.setFont(mono_font)
             if prev:
@@ -780,7 +800,7 @@ class CustodyReportPage(QWidget):
 
             # 7: Event Hash (partial)
             eh = ev.event_hash or ""
-            eh_txt = eh[:12] + "…" if len(eh) > 12 else eh
+            eh_txt = eh[:18] + "…" if len(eh) > 18 else eh
             item7 = self._set_cell(row_idx, 7, eh_txt, Qt.AlignCenter)
             item7.setFont(mono_font)
             item7.setToolTip(f"Event Hash: {eh}")
@@ -788,7 +808,16 @@ class CustodyReportPage(QWidget):
             # Store the event object on the first cell for quick lookup
             self._table.item(row_idx, 0).setData(Qt.UserRole, ev)
 
-        self._table.resizeColumnsToContents()
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.Stretch)
+        header.setSectionResizeMode(7, QHeaderView.Stretch)
+
         if events:
             self._table.selectRow(0)
         else:

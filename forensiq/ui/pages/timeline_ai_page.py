@@ -197,6 +197,7 @@ class TimelineAIPage(QWidget):
         main_layout.addLayout(header_row)
 
         # 2. Control & Normalization Toolbar
+        # 2. Control & Normalization Toolbar (Grouped: Exhibit & AI Triage | Drift Normalization | Exports)
         ctrl_card = QFrame()
         ctrl_card.setStyleSheet(
             "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
@@ -206,24 +207,42 @@ class TimelineAIPage(QWidget):
         ctrl_layout.setContentsMargins(10, 6, 10, 6)
         ctrl_layout.setSpacing(10)
 
+        # Group 1: Evidence Exhibit & AI Triage Action
         ev_lbl = QLabel("Evidence:")
         ev_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 11px;")
         ctrl_layout.addWidget(ev_lbl)
 
         self._evidence_combo = QComboBox()
-        self._evidence_combo.setMinimumWidth(260)
+        self._evidence_combo.setMinimumWidth(300)
         self._evidence_combo.setStyleSheet(
             "QComboBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
-            "border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
+            "border-radius: 4px; padding: 5px 8px; font-size: 11px; }"
             "QComboBox QAbstractItemView { background: #0d1821; color: #e8f0fe; }"
         )
         self._evidence_combo.currentIndexChanged.connect(self._on_evidence_selected)
         ctrl_layout.addWidget(self._evidence_combo)
         self._ev_selector = self._evidence_combo  # Script compatibility alias
 
-        # Offset controls
+        # AI Triage Button directly next to evidence selector
+        self._triage_btn = QPushButton("⚡ Run AI Triage")
+        self._triage_btn.setStyleSheet(
+            "QPushButton { background: #7c3aed; color: #ffffff; font-weight: bold; "
+            "border-radius: 4px; padding: 5px 14px; font-size: 11px; }"
+            "QPushButton:hover { background: #6d28d9; }"
+            "QPushButton:disabled { background: #1e2d3d; color: #64748b; }"
+        )
+        self._triage_btn.clicked.connect(self._start_ai_triage)
+        ctrl_layout.addWidget(self._triage_btn)
+
+        # Subtle vertical divider
+        v_div1 = QFrame()
+        v_div1.setFrameShape(QFrame.Shape.VLine)
+        v_div1.setStyleSheet("color: #1e3a5f; max-height: 22px; margin: 0 4px;")
+        ctrl_layout.addWidget(v_div1)
+
+        # Group 2: Timestamp Drift Calibration Controls
         off_lbl = QLabel("Drift Offset:")
-        off_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px; margin-left: 6px;")
+        off_lbl.setStyleSheet("color: #9aa5b4; font-size: 11px;")
         ctrl_layout.addWidget(off_lbl)
 
         self._sign_combo = QComboBox()
@@ -239,7 +258,7 @@ class TimelineAIPage(QWidget):
         self._offset_spin.setRange(0.0, 86400.0)
         self._offset_spin.setDecimals(1)
         self._offset_spin.setValue(0.0)
-        self._offset_spin.setFixedWidth(80)
+        self._offset_spin.setFixedWidth(75)
         self._offset_spin.setStyleSheet(
             "QDoubleSpinBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
             "border-radius: 4px; padding: 4px; font-size: 11px; }"
@@ -253,7 +272,7 @@ class TimelineAIPage(QWidget):
             NormalizationMethod.REFERENCE_EVENT.value,
             NormalizationMethod.MANUFACTURER_DRIFT.value,
         ])
-        self._method_combo.setFixedWidth(160)
+        self._method_combo.setFixedWidth(155)
         self._method_combo.setStyleSheet(
             "QComboBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
             "border-radius: 4px; padding: 4px 6px; font-size: 11px; }"
@@ -271,18 +290,7 @@ class TimelineAIPage(QWidget):
 
         ctrl_layout.addStretch()
 
-        # AI Triage Button
-        self._triage_btn = QPushButton("⚡ Run AI Triage")
-        self._triage_btn.setStyleSheet(
-            "QPushButton { background: #7c3aed; color: #ffffff; font-weight: bold; "
-            "border-radius: 4px; padding: 5px 16px; font-size: 11px; }"
-            "QPushButton:hover { background: #6d28d9; }"
-            "QPushButton:disabled { background: #1e2d3d; color: #64748b; }"
-        )
-        self._triage_btn.clicked.connect(self._start_ai_triage)
-        ctrl_layout.addWidget(self._triage_btn)
-
-        # Export buttons
+        # Group 3: Export buttons
         export_btn = QPushButton("Export JSON")
         export_btn.setStyleSheet(
             "QPushButton { background: #1e2d3d; color: #7ec8e3; border: 1px solid #2d4a6a; "
@@ -306,20 +314,21 @@ class TimelineAIPage(QWidget):
         # Progress bar
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 0)
-        self._progress_bar.setFixedHeight(4)
+        self._progress_bar.setFixedHeight(3)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(
-            "QProgressBar { background: #12181f; border-radius: 2px; border: none; }"
-            "QProgressBar::chunk { background: #a855f7; border-radius: 2px; }"
+            "QProgressBar { background: #12181f; border-radius: 1px; border: none; }"
+            "QProgressBar::chunk { background: #a855f7; border-radius: 1px; }"
         )
         self._progress_bar.setVisible(False)
         main_layout.addWidget(self._progress_bar)
 
         # 3. Main Splitter: Video Theater (Left) and Inspection Dock (Right)
+        # Balanced 52%/48% distribution to guarantee ample room for AI detections & review buttons
         self._main_splitter = QSplitter(Qt.Horizontal)
         self._main_splitter.setStyleSheet("QSplitter::handle { background: #1e3a5f; width: 3px; }")
 
-        # Left: Video & Timeline Scrubber Theater (Spacious 62-65% width)
+        # Left: Video & Timeline Scrubber Theater
         left_theater = self._build_video_theater_panel()
         self._main_splitter.addWidget(left_theater)
 
@@ -327,9 +336,9 @@ class TimelineAIPage(QWidget):
         right_dock = self._build_inspection_dock_panel()
         self._main_splitter.addWidget(right_dock)
 
-        self._main_splitter.setStretchFactor(0, 6)
-        self._main_splitter.setStretchFactor(1, 4)
-        self._main_splitter.setSizes([1040, 720])
+        self._main_splitter.setStretchFactor(0, 5)
+        self._main_splitter.setStretchFactor(1, 5)
+        self._main_splitter.setSizes([900, 860])
         main_layout.addWidget(self._main_splitter, stretch=1)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -995,13 +1004,13 @@ class TimelineAIPage(QWidget):
             # Per-row Review Action Buttons: Confirm / Reject / Needs Review
             act_widget = QWidget()
             act_layout = QHBoxLayout(act_widget)
-            act_layout.setContentsMargins(1, 1, 1, 1)
-            act_layout.setSpacing(3)
+            act_layout.setContentsMargins(2, 2, 2, 2)
+            act_layout.setSpacing(4)
 
             btn_conf = QPushButton("✓ Confirm")
             btn_conf.setStyleSheet(
                 "QPushButton { background: #064e3b; color: #34d399; font-weight: bold; "
-                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #059669; }"
+                "border-radius: 3px; padding: 2px 6px; font-size: 10px; border: 1px solid #059669; min-width: 58px; }"
                 "QPushButton:hover { background: #047857; color: #ffffff; }"
             )
             btn_conf.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.CONFIRMED.value))
@@ -1010,7 +1019,7 @@ class TimelineAIPage(QWidget):
             btn_rej = QPushButton("✕ Reject")
             btn_rej.setStyleSheet(
                 "QPushButton { background: #450a0a; color: #f87171; font-weight: bold; "
-                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #dc2626; }"
+                "border-radius: 3px; padding: 2px 6px; font-size: 10px; border: 1px solid #dc2626; min-width: 52px; }"
                 "QPushButton:hover { background: #991b1b; color: #ffffff; }"
             )
             btn_rej.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.REJECTED.value))
@@ -1020,7 +1029,7 @@ class TimelineAIPage(QWidget):
             btn_rev.setToolTip("Mark as Needs Review")
             btn_rev.setStyleSheet(
                 "QPushButton { background: #451a03; color: #fbbf24; font-weight: bold; "
-                "border-radius: 3px; padding: 2px 4px; font-size: 10px; border: 1px solid #d97706; }"
+                "border-radius: 3px; padding: 2px 6px; font-size: 10px; border: 1px solid #d97706; min-width: 52px; }"
                 "QPushButton:hover { background: #92400e; color: #ffffff; }"
             )
             btn_rev.clicked.connect(lambda checked=False, did=d.id: self._review_detection_row(did, ReviewerStatus.NEEDS_REVIEW.value))
