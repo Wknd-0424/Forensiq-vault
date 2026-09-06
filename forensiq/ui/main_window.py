@@ -173,7 +173,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — SIH 2026")
         self.setMinimumSize(1280, 760)
-        self.resize(1920, 1032)
+        self.resize(1920, 930)
 
         # Central widget holds: header + (sidebar | content)
         central = QWidget()

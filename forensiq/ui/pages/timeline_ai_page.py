@@ -978,6 +978,26 @@ class TimelineAIPage(QWidget):
         self._last_rendered_pixmap = pixmap
         self._screen_box.setPixmap(pixmap)
 
+    def _get_detection_time_seconds(self, d: AIDetection) -> float:
+        """Extract offset seconds from detection timestamp or frame number."""
+        if d.frame_timestamp:
+            ts = d.frame_timestamp.strip()
+            if ts.startswith("+") and ts.endswith("s"):
+                try:
+                    return float(ts[1:-1])
+                except ValueError:
+                    pass
+            parts = ts.split(":")
+            if len(parts) == 3:
+                try:
+                    h, m, s = float(parts[0]), float(parts[1]), float(parts[2])
+                    return h * 3600.0 + m * 60.0 + s
+                except ValueError:
+                    pass
+        if getattr(self, "_current_fps", 0) > 0 and d.frame_number > 0:
+            return float(d.frame_number) / self._current_fps
+        return 0.0
+
     def _seek_and_render_frame(
         self,
         seconds: float,
@@ -1008,35 +1028,57 @@ class TimelineAIPage(QWidget):
 
             H, W = frame.shape[:2]
 
-            # 1. Draw detection bounding box if provided
+            # 1. Determine bounding boxes to draw
+            boxes_to_draw: list[tuple[list[float], str, str]] = []
             if bbox and len(bbox) >= 4:
-                bx = int(bbox[0] * W)
-                by = int(bbox[1] * H)
-                bw = int(bbox[2] * W)
-                bh = int(bbox[3] * H)
+                boxes_to_draw.append((bbox, bbox_label or "DETECTION", "focused"))
+            elif getattr(self, "_all_detections_map", None):
+                # Auto-overlay active detections within ±0.65s of current playback position
+                for det in self._all_detections_map.values():
+                    det_sec = self._get_detection_time_seconds(det)
+                    if abs(det_sec - seconds) <= 0.65 and det.bbox_json:
+                        try:
+                            b = json.loads(det.bbox_json)
+                            if len(b) >= 4:
+                                lbl = f"{det.class_name.upper()} {int(det.confidence * 100)}%"
+                                boxes_to_draw.append((b, lbl, det.class_name.lower()))
+                        except Exception:
+                            pass
+
+            for b, tag_text, c_type in boxes_to_draw:
+                bx = int(b[0] * W)
+                by = int(b[1] * H)
+                bw = int(b[2] * W)
+                bh = int(b[3] * H)
 
                 bx = max(0, min(W - 1, bx))
                 by = max(0, min(H - 1, by))
                 bw = max(1, min(W - bx, bw))
                 bh = max(1, min(H - by, bh))
 
-                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (0, 240, 255), 3)
+                if c_type == "person":
+                    box_color = (255, 215, 0)  # Bright Cyan / Aqua in BGR
+                elif c_type == "vehicle":
+                    box_color = (0, 165, 255)  # Amber / Orange in BGR
+                else:
+                    box_color = (0, 240, 255)  # Bright Yellow in BGR
 
-                tag_text = bbox_label or "DETECTION"
-                font_scale = 0.55
+                cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), box_color, 2)
+
+                font_scale = 0.50
                 thickness = 1
-                (tw, th), baseline = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-                tag_y1 = max(0, by - th - 10)
+                (tw, th), _ = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+                tag_y1 = max(0, by - th - 8)
                 tag_y2 = by
-                tag_x2 = min(W, bx + tw + 12)
-                cv2.rectangle(frame, (bx, tag_y1), (tag_x2, tag_y2), (0, 240, 255), -1)
+                tag_x2 = min(W, bx + tw + 10)
+                cv2.rectangle(frame, (bx, tag_y1), (tag_x2, tag_y2), box_color, -1)
                 cv2.putText(
                     frame,
                     tag_text,
-                    (bx + 6, tag_y2 - 5),
+                    (bx + 5, tag_y2 - 4),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale,
-                    (0, 0, 0),
+                    (10, 15, 20),
                     thickness,
                     cv2.LINE_AA,
                 )
@@ -1173,14 +1215,7 @@ class TimelineAIPage(QWidget):
 
                 d = self._all_detections_map.get(det_id)
                 if d:
-                    sec = 0.0
-                    if d.frame_timestamp and d.frame_timestamp.startswith("+") and d.frame_timestamp.endswith("s"):
-                        try:
-                            sec = float(d.frame_timestamp[1:-1])
-                        except ValueError:
-                            sec = (d.frame_number / self._current_fps) if self._current_fps > 0 else 0.0
-                    elif self._current_fps > 0:
-                        sec = d.frame_number / self._current_fps
+                    sec = self._get_detection_time_seconds(d)
 
                     bbox = None
                     if d.bbox_json:

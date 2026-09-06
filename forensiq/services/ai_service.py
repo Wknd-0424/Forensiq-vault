@@ -129,8 +129,6 @@ def run_ai_triage(
     if is_yolo_available():
         try:
             raw_detections = _run_yolo_triage(session, segment, evidence, confidence_threshold)
-            if not raw_detections:
-                raw_detections = _run_local_heuristic_triage(segment, evidence, confidence_threshold)
         except Exception as exc:
             logger.warning("YOLO triage failed (%s); falling back to local heuristic engine.", exc)
             raw_detections = _run_local_heuristic_triage(segment, evidence, confidence_threshold)
@@ -139,13 +137,24 @@ def run_ai_triage(
     else:
         raw_detections = _run_local_heuristic_triage(segment, evidence, confidence_threshold)
 
+    # Clear prior unreviewed / pending detections and events for this segment to avoid stale duplicates
+    session.query(AIDetection).filter(
+        AIDetection.segment_id == segment.id,
+        AIDetection.reviewer_status == ReviewerStatus.PENDING.value,
+    ).delete(synchronize_session=False)
+
+    session.query(TimelineEvent).filter(
+        TimelineEvent.segment_id == segment.id,
+        TimelineEvent.event_type == TimelineEventType.AI_PRELIMINARY.value,
+        TimelineEvent.analyst_status == AnalystStatus.PENDING.value,
+    ).delete(synchronize_session=False)
+    session.flush()
+
     persisted_detections: list[AIDetection] = []
 
     # Persist detections
     for d in raw_detections:
         conf = float(d.get("confidence", 0.7))
-        if conf < confidence_threshold:
-            continue
 
         detection = AIDetection(
             segment_id=segment.id,
@@ -339,28 +348,63 @@ def _run_yolo_triage(
         logger.warning("Could not open video working copy %s with cv2", wc_path)
         return _run_local_heuristic_triage(segment, evidence, threshold)
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    fps = max(1.0, float(cap.get(cv2.CAP_PROP_FPS) or 25.0))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames <= 0:
-        cap.release()
-        return _run_local_heuristic_triage(segment, evidence, threshold)
 
-    # Sample keyframes evenly across duration (every ~2 seconds, max 30 frames)
-    step = max(1, int(fps * 2.0))
-    sample_indices = list(range(0, total_frames, step))[:30]
+    # Sample keyframes evenly across duration (every ~1.0 second, max 60 frames)
+    step = max(1, int(fps * 1.0))
+    frames_to_process: list[tuple[int, float, Any]] = []
+
+    if total_frames > 0:
+        sample_indices = list(range(0, total_frames, step))[:60]
+        for f_idx in sample_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+            offset_sec = round(f_idx / fps, 2)
+            frames_to_process.append((f_idx, offset_sec, frame))
+    else:
+        # Sequential reading fallback for raw DVR containers or streams with unknown frame counts
+        f_idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                break
+            if f_idx % step == 0:
+                offset_sec = round(f_idx / fps, 2)
+                frames_to_process.append((f_idx, offset_sec, frame))
+                if len(frames_to_process) >= 60:
+                    break
+            f_idx += 1
+            if f_idx > 3600 * int(fps):  # 1 hour safety ceiling
+                break
+
+    cap.release()
+
+    if not frames_to_process:
+        logger.warning("No frames could be read from video %s; falling back to local heuristic triage", wc_path)
+        return _run_local_heuristic_triage(segment, evidence, threshold)
 
     model = _get_yolo_model()
     detections: list[dict[str, Any]] = []
 
-    for f_idx in sample_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            continue
+    def _compute_iou(bA: list[float], bB: list[float]) -> float:
+        xA = max(bA[0], bB[0])
+        yA = max(bA[1], bB[1])
+        xB = min(bA[0] + bA[2], bB[0] + bB[2])
+        yB = min(bA[1] + bA[3], bB[1] + bB[3])
+        interW = max(0.0, xB - xA)
+        interH = max(0.0, yB - yA)
+        interArea = interW * interH
+        denom = float(bA[2] * bA[3] + bB[2] * bB[3] - interArea)
+        return interArea / denom if denom > 0 else 0.0
 
-        offset_sec = round(f_idx / fps, 2)
+    last_seen_vehicle: list[tuple[float, list[float]]] = []
+
+    for f_idx, offset_sec, frame in frames_to_process:
         try:
-            results = model.predict(frame, conf=threshold, verbose=False)
+            results = model.predict(frame, conf=0.18, verbose=False)
         except Exception as e:
             logger.warning("YOLO predict error on frame %d: %s", f_idx, e)
             continue
@@ -368,43 +412,88 @@ def _run_yolo_triage(
         if not results or not len(results[0].boxes):
             continue
 
+        frame_candidates: list[tuple[str, float, list[float], str]] = []
+
         for box in results[0].boxes:
             cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+            xyxy = box.xyxyn[0].tolist()  # [xmin, ymin, xmax, ymax]
+            xmin = max(0.0, min(1.0, float(xyxy[0])))
+            ymin = max(0.0, min(1.0, float(xyxy[1])))
+            xmax = max(0.0, min(1.0, float(xyxy[2])))
+            ymax = max(0.0, min(1.0, float(xyxy[3])))
+            w = max(0.0, xmax - xmin)
+            h = max(0.0, ymax - ymin)
+
             # Map COCO classes strictly to forensic categories:
             # 0: person
             # 1: bicycle, 2: car, 3: motorcycle, 5: bus, 7: truck -> vehicle
             if cls_id == 0:
+                # Human silhouette aspect-ratio filter:
+                # Normal surveillance pedestrians are vertical (height >= width * 0.65).
+                # Filters out squarish tree foliage or ground shadows in IR night footage.
+                min_person_conf = max(0.40, threshold * 0.70)
+                if conf < min_person_conf or h < (w * 0.65) or (w * h) < 0.001:
+                    continue
                 forensic_class = "person"
             elif cls_id in (1, 2, 3, 5, 7):
+                # Vehicle filter:
+                # In low-light / night surveillance, parked or distant vehicles have lower IR contrast.
+                min_veh_conf = max(0.20, threshold * 0.35)
+                if conf < min_veh_conf or (w * h) < 0.015:
+                    continue
                 forensic_class = "vehicle"
             else:
                 continue
 
-            conf = round(float(box.conf[0]), 3)
-            xyxy = box.xyxyn[0].tolist()  # [xmin, ymin, xmax, ymax]
-            xmin, ymin, xmax, ymax = xyxy[0], xyxy[1], xyxy[2], xyxy[3]
-            bbox = [round(xmin, 4), round(ymin, 4), round(xmax - xmin, 4), round(ymax - ymin, 4)]
-            orig_label = model.names.get(cls_id, str(cls_id))
+            bbox = [round(xmin, 4), round(ymin, 4), round(w, 4), round(h, 4)]
+            orig_label = model.names.get(cls_id, str(cls_id)) if hasattr(model, "names") else str(cls_id)
+            frame_candidates.append((forensic_class, conf, bbox, orig_label))
+
+        # Intra-frame Non-Maximum Suppression (deduplicate overlapping boxes of same class)
+        frame_candidates.sort(key=lambda x: x[1], reverse=True)
+        kept_candidates: list[tuple[str, float, list[float], str]] = []
+        for cand in frame_candidates:
+            c_cls, c_conf, c_bbox, c_orig = cand
+            overlap = False
+            for k_cls, _, k_bbox, _ in kept_candidates:
+                if k_cls == c_cls and _compute_iou(c_bbox, k_bbox) > 0.60:
+                    overlap = True
+                    break
+            if not overlap:
+                kept_candidates.append(cand)
+
+        # Inter-frame tracking & deduplication
+        for f_class, f_conf, f_bbox, f_orig in kept_candidates:
+            if f_class == "vehicle":
+                # Deduplicate stationary parked vehicles within 5.0s window if IoU > 0.70
+                is_stationary = False
+                for prev_time, prev_box in last_seen_vehicle:
+                    if (offset_sec - prev_time) < 5.0 and _compute_iou(f_bbox, prev_box) > 0.70:
+                        is_stationary = True
+                        break
+                if is_stationary:
+                    continue
+                last_seen_vehicle.append((offset_sec, f_bbox))
 
             detections.append({
                 "model_name": YOLO_MODEL_NAME,
                 "model_version": YOLO_MODEL_VERSION,
                 "model_hash": None,
-                "class_name": forensic_class,
-                "confidence": conf,
+                "class_name": f_class,
+                "confidence": round(f_conf, 3),
                 "frame_number": f_idx,
                 "offset_seconds": offset_sec,
                 "frame_timestamp": f"+{offset_sec:.1f}s",
-                "bbox": bbox,
-                "notes": f"YOLOv8 detected {orig_label} (forensic category: {forensic_class}) with confidence {conf:.2f}",
+                "bbox": f_bbox,
+                "notes": f"YOLOv8 detected {f_orig} (forensic category: {f_class}) with confidence {f_conf:.2f}",
             })
 
-            if len(detections) >= 30:
+            if len(detections) >= 50:
                 break
-        if len(detections) >= 30:
+        if len(detections) >= 50:
             break
 
-    cap.release()
     return detections
 
 
