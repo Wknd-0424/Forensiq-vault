@@ -23,6 +23,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -85,7 +86,7 @@ class EvidenceDetailPage(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(16)
+        root.setSpacing(14)
 
         # ── Header ─────────────────────────────────────────────────────────
         header_row = QHBoxLayout()
@@ -114,6 +115,43 @@ class EvidenceDetailPage(QWidget):
         self._case_label.setStyleSheet("color: #6b7280; font-size: 11px;")
         header_row.addWidget(self._case_label)
         root.addLayout(header_row)
+
+        # ── Evidence Selector Bar ──────────────────────────────────────────
+        sel_card = QFrame()
+        sel_card.setStyleSheet(
+            "QFrame { background: #0d1821; border: 1px solid #1e3a5f; "
+            "border-radius: 8px; }"
+        )
+        sel_layout = QHBoxLayout(sel_card)
+        sel_layout.setContentsMargins(14, 8, 14, 8)
+        sel_layout.setSpacing(12)
+
+        sel_lbl = QLabel("Select Evidence:")
+        sel_lbl.setStyleSheet("color: #7ec8e3; font-weight: bold; font-size: 12px;")
+        sel_layout.addWidget(sel_lbl)
+
+        self._evidence_combo = QComboBox()
+        self._evidence_combo.setMinimumWidth(380)
+        self._evidence_combo.setStyleSheet(
+            "QComboBox { background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 12px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox QAbstractItemView { background: #0d1821; color: #e8f0fe; selection-background-color: #1e3a5f; }"
+        )
+        self._evidence_combo.currentIndexChanged.connect(self._on_evidence_selected)
+        sel_layout.addWidget(self._evidence_combo)
+
+        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn.setStyleSheet(
+            "QPushButton { background: #1a2332; color: #9aa5b4; border: 1px solid #2d4a6a; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 12px; }"
+            "QPushButton:hover { background: #223046; color: #e8f0fe; }"
+        )
+        refresh_btn.clicked.connect(self.refresh)
+        sel_layout.addWidget(refresh_btn)
+        sel_layout.addStretch()
+
+        root.addWidget(sel_card)
 
         # ── Scrollable content ─────────────────────────────────────────────
         scroll = QScrollArea()
@@ -235,19 +273,118 @@ class EvidenceDetailPage(QWidget):
         from forensiq.services.evidence_service import get_evidence_by_id
         self._evidence_id = evidence_id
         self._evidence = get_evidence_by_id(evidence_id)
+
+        # Synchronize dropdown if needed
+        if hasattr(self, "_evidence_combo") and self._evidence_combo.count() > 0:
+            for idx in range(self._evidence_combo.count()):
+                if self._evidence_combo.itemData(idx) == evidence_id:
+                    if self._evidence_combo.currentIndex() != idx:
+                        self._evidence_combo.blockSignals(True)
+                        self._evidence_combo.setCurrentIndex(idx)
+                        self._evidence_combo.blockSignals(False)
+                    break
+
         self._populate()
 
     def refresh(self) -> None:
-        if self._evidence_id:
-            self.load_evidence(self._evidence_id)
+        """Reload evidence list for active case, select active evidence, and populate details."""
+        active_case_id = self._main_window.active_case_id
+
+        self._evidence_combo.blockSignals(True)
+        self._evidence_combo.clear()
+
+        if not active_case_id:
+            self._evidence_combo.addItem("No active case selected", None)
+            self._evidence_combo.setEnabled(False)
+            self._case_label.setText("No active case")
+            self._clear_views()
+            self._evidence_combo.blockSignals(False)
+            return
+
+        from forensiq.database import get_session
+        from forensiq.models.case import Case
+        from forensiq.models.evidence import EvidenceItem
+        session = get_session()
+        try:
+            case = session.query(Case).filter_by(id=active_case_id).first()
+            if case:
+                self._case_label.setText(f"Case: {case.case_number} — {case.title[:40]}")
+
+            items = (
+                session.query(EvidenceItem)
+                .filter_by(case_id=active_case_id)
+                .order_by(EvidenceItem.imported_at_utc.asc())
+                .all()
+            )
+
+            if not items:
+                self._evidence_combo.addItem("No evidence items in this case", None)
+                self._evidence_combo.setEnabled(False)
+                self._clear_views()
+                return
+
+            self._evidence_combo.setEnabled(True)
+            target_ev_id = self._evidence_id or self._main_window.active_evidence_id or items[0].id
+            selected_idx = 0
+
+            for idx, item in enumerate(items):
+                size_mb = f"{item.file_size_bytes / (1024 * 1024):.1f} MB" if item.file_size_bytes else "0 B"
+                label = f"[{item.evidence_number}] {item.source_filename} ({size_mb})"
+                self._evidence_combo.addItem(label, item.id)
+                if item.id == target_ev_id:
+                    selected_idx = idx
+
+            self._evidence_combo.setCurrentIndex(selected_idx)
+            chosen_id = self._evidence_combo.itemData(selected_idx)
+            if chosen_id:
+                self.load_evidence(chosen_id)
+        finally:
+            session.close()
+            self._evidence_combo.blockSignals(False)
+
+    def _on_evidence_selected(self, index: int) -> None:
+        ev_id = self._evidence_combo.currentData()
+        if ev_id:
+            self._main_window.set_active_evidence_id(ev_id)
+            self.load_evidence(ev_id)
+        else:
+            self._clear_views()
+
+    def _clear_views(self) -> None:
+        self._evidence_id = None
+        self._evidence = None
+        self._ev_number_label.setText("—")
+        self._status_badge.set_status("IMPORTED")
+        self._hash_card.set_hashes("", "")
+        self._hash_card.set_status(HashCard.UNVERIFIED)
+        self._orig_path_label.setText("—")
+        self._wc_path_label.setText("—")
+        self._manifest_label.setText("—")
+        self._read_only_label.setText("")
+        self._verify_btn.setEnabled(False)
+        self._verify_status.setText("")
+        self._custody_table.load([])
 
     def _populate(self) -> None:
         ev = self._evidence
         if not ev:
+            self._clear_views()
             return
 
         self._ev_number_label.setText(f"Evidence {ev.evidence_number}")
         self._status_badge.set_status(ev.status or "IMPORTED")
+
+        # Update case label if not set
+        if not self._case_label.text():
+            from forensiq.database import get_session
+            from forensiq.models.case import Case
+            session = get_session()
+            try:
+                case = session.query(Case).filter_by(id=ev.case_id).first()
+                if case:
+                    self._case_label.setText(f"Case: {case.case_number} — {case.title[:40]}")
+            finally:
+                session.close()
 
         # Hash card
         self._hash_card.set_hashes(ev.original_sha256 or "", ev.original_md5 or "")

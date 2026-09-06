@@ -138,8 +138,16 @@ class MainWindow(QMainWindow):
             if ev:
                 self._active_evidence_id = ev.id
                 self._header_evidence_value.setText(ev.evidence_number)
+                detail_page = self._pages.get("evidence_detail")
+                if detail_page and hasattr(detail_page, "load_evidence"):
+                    detail_page.load_evidence(ev.id)
         finally:
             session.close()
+
+    def _open_evidence_detail(self, evidence_id: str) -> None:
+        """Navigate to Evidence Details page and load the given exhibit."""
+        self.set_active_evidence_id(evidence_id)
+        self.navigate_to("evidence_detail")
 
     # ------------------------------------------------------------------
     # Navigation
@@ -354,6 +362,14 @@ class MainWindow(QMainWindow):
             page = cls(main_window=self)
             self._pages[key] = page
             self._stack.addWidget(page)
+
+        # Connect inter-page signals
+        import_page = self._pages.get("evidence_import")
+        detail_page = self._pages.get("evidence_detail")
+        if import_page and hasattr(import_page, "evidence_open_requested"):
+            import_page.evidence_open_requested.connect(self._open_evidence_detail)
+        if detail_page and hasattr(detail_page, "back_requested"):
+            detail_page.back_requested.connect(lambda: self.navigate_to("evidence_import"))
 
         return wrapper
 
