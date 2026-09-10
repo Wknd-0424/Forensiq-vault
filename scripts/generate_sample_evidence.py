@@ -85,6 +85,53 @@ def generate_tplink_vigi_mp4(output_path: Path) -> None:
     print(f"  [+] Created TP-Link exhibit: {output_path.name} ({len(data)} bytes)")
 
 
+def generate_cpplus_dav(output_path: Path) -> None:
+    """Create a realistic CP Plus .dav exhibit with CPPLUS/CPPL headers and H.264 stream."""
+    cpplus_header = (
+        b"CPPLUS"                              # Magic bytes
+        b"\x04\x00"                            # Channel 4
+        b"\x00\x00"                            # Stream type: Main
+        b"\x20\x26\x09\x06\x10\x32\x00\x00"    # Timestamp: 2026-09-06 10:32:00
+        b"CPPL"                                # CP Plus packet sync tag
+        b"\x00\x10\x00\x00"                    # Payload length
+    )
+    video_stream = build_annex_b_h264_stream(num_frames=20)
+    data = cpplus_header + video_stream
+    output_path.write_bytes(data)
+    print(f"  [+] Created CP Plus exhibit: {output_path.name} ({len(data)} bytes)")
+
+
+def generate_uniview_uvf(output_path: Path) -> None:
+    """Create a realistic Uniview .uvf exhibit with UBVR and UNVREC headers."""
+    unv_header = (
+        b"UBVR"                                # Magic bytes
+        b"\x00\x01\x00\x01"                    # Format version
+        b"UNVREC"                              # Uniview recording tag
+        b"\x05\x00"                            # Channel 5
+        b"\x20\x26\x09\x06\x10\x33\x00\x00"    # Timestamp: 2026-09-06 10:33:00
+        b"\x00\x12\x00\x00"                    # Block size
+    )
+    video_stream = build_annex_b_h264_stream(num_frames=18)
+    data = unv_header + video_stream
+    output_path.write_bytes(data)
+    print(f"  [+] Created Uniview exhibit: {output_path.name} ({len(data)} bytes)")
+
+
+def generate_honeywell_hos(output_path: Path) -> None:
+    """Create a realistic Honeywell .hos exhibit with HONEYWELL/HOS headers."""
+    honeywell_header = (
+        b"HONEYWELL"                           # Master magic bytes (9 bytes)
+        b"HOS\x01"                             # Honeywell Open Stream header
+        b"MAXPRO"                              # MAXPRO clip marker
+        b"\x06\x00"                            # Channel 6
+        b"\x20\x26\x09\x06\x10\x34\x00\x00"    # Timestamp: 2026-09-06 10:34:00
+    )
+    video_stream = build_annex_b_h264_stream(num_frames=22)
+    data = honeywell_header + video_stream
+    output_path.write_bytes(data)
+    print(f"  [+] Created Honeywell exhibit: {output_path.name} ({len(data)} bytes)")
+
+
 def generate_corrupted_carve_target(output_path: Path) -> None:
     """Create a corrupted DVR raw disk dump with salvageable Annex-B H.264 streams."""
     # Corrupt sector noise simulating wiped/damaged partition tables and bad sectors
@@ -133,6 +180,21 @@ These synthetic evidence files are prepared for testing and live demonstration o
   3. Click **Carve Video Stream**.
   4. The Annex-B NAL unit carver scans the stream, identifies SPS, PPS, IDR keyframes, and slices, and reassembles a clean `.h264` derivative in the segregated vault folder with cryptographic manifests!
 
+### 5. `EX05_CPPlus_CAM04_Perimeter.dav`
+- **Vendor / Format**: CP Plus (`.dav` container with `CPPLUS` / `CPPL` headers).
+- **Camera Location**: Camera 04 (Perimeter Fence).
+- **Test Use Case**: Demonstrates CP Plus proprietary signature recognition and Orange/Indigo series surveillance export support.
+
+### 6. `EX06_Uniview_CAM05_ServerRoom.uvf`
+- **Vendor / Format**: Uniview Technologies (`.uvf` container with `UBVR` / `UNVREC` signatures).
+- **Camera Location**: Camera 05 (Server Room).
+- **Test Use Case**: Demonstrates Uniview UNV surveillance export identification and UVF container parsing.
+
+### 7. `EX07_Honeywell_CAM06_HQGate.hos`
+- **Vendor / Format**: Honeywell Security (`.hos` container with `HONEYWELL` / `HOS` / `MAXPRO` headers).
+- **Camera Location**: Camera 06 (HQ Main Gate).
+- **Test Use Case**: Demonstrates Honeywell MAXPRO / Performance Series NVR video clip detection.
+
 ---
 
 ## Forensic Invariant Note
@@ -153,6 +215,9 @@ def main() -> None:
     generate_hikvision_hkv(SAMPLE_DIR / "EX02_Hikvision_CAM02_LoadingBay.hkv")
     generate_tplink_vigi_mp4(SAMPLE_DIR / "EX03_TPLink_CAM03_VIGI_ProfileS.mp4")
     generate_corrupted_carve_target(SAMPLE_DIR / "EX04_Damaged_DVR_Carve_Target.raw")
+    generate_cpplus_dav(SAMPLE_DIR / "EX05_CPPlus_CAM04_Perimeter.dav")
+    generate_uniview_uvf(SAMPLE_DIR / "EX06_Uniview_CAM05_ServerRoom.uvf")
+    generate_honeywell_hos(SAMPLE_DIR / "EX07_Honeywell_CAM06_HQGate.hos")
     generate_readme(SAMPLE_DIR)
 
     print("\n[OK] All sample exhibits generated in: sample_evidence/\n")
@@ -160,3 +225,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

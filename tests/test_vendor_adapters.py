@@ -14,10 +14,13 @@ from pathlib import Path
 
 import pytest
 
+from forensiq.adapters.cpplus_export import CPPlusExportAdapter
 from forensiq.adapters.dahua_export import DahuaExportAdapter
 from forensiq.adapters.hikvision_export import HikvisionExportAdapter
+from forensiq.adapters.honeywell_export import HoneywellExportAdapter
 from forensiq.adapters.registry import AdapterRegistry, get_registry
 from forensiq.adapters.tplink_onvif_rtsp import TPLinkAdapter
+from forensiq.adapters.uniview_export import UniviewExportAdapter
 from forensiq.adapters.unknown_source import UnknownSourceAdapter
 from forensiq.database import init_db, session_scope
 from forensiq.models.device import AdapterProfile
@@ -181,6 +184,135 @@ class TestTPLinkAdapter:
         assert resp.status == "UNSUPPORTED"
 
 
+class TestCPPlusExportAdapter:
+    """Test suite for CP Plus (Aditya Infotech) surveillance export adapter."""
+
+    def test_identify_by_cpplus_magic(self, tmp_path):
+        adapter = CPPlusExportAdapter()
+        cpplus_file = tmp_path / "feed.bin"
+        cpplus_file.write_bytes(b"\x00\x00CPPLUS\x01\x02\x03stream_payload")
+
+        resp = adapter.identify(cpplus_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "CPPLUS" in resp.basis
+        assert resp.data["vendor"] == "CP Plus (Aditya Infotech)"
+
+    def test_identify_by_cppl_sync_tag(self, tmp_path):
+        adapter = CPPlusExportAdapter()
+        cppl_file = tmp_path / "camera4.264"
+        cppl_file.write_bytes(b"CPPL\x00\x04\x00\x00")
+
+        resp = adapter.identify(cppl_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "CPPL" in resp.basis
+
+    def test_identify_by_cvr_extension(self, tmp_path):
+        adapter = CPPlusExportAdapter()
+        cvr_file = tmp_path / "backup_archive.cvr"
+        cvr_file.write_bytes(b"\x00\x00\x00\x00raw_stream")
+
+        resp = adapter.identify(cvr_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "MEDIUM"
+        assert ".cvr" in resp.basis
+
+    def test_capabilities_matrix(self):
+        adapter = CPPlusExportAdapter()
+        caps = adapter.capabilities()
+        assert caps.status == "SUPPORTED"
+        assert caps.data["vendor_name"] == "CP Plus (Aditya Infotech)"
+        assert "cpplus_packet_parsing" in caps.data["features"]
+        assert len(caps.limitations) > 0
+
+
+class TestUniviewExportAdapter:
+    """Test suite for Uniview Technologies (UNV) surveillance export adapter."""
+
+    def test_identify_by_ubvr_magic(self, tmp_path):
+        adapter = UniviewExportAdapter()
+        ubvr_file = tmp_path / "unv_stream.bin"
+        ubvr_file.write_bytes(b"UBVR\x00\x01\x00\x01payload")
+
+        resp = adapter.identify(ubvr_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "UBVR" in resp.basis
+        assert resp.data["vendor"] == "Uniview Technologies (UNV)"
+
+    def test_identify_by_unvrec_header(self, tmp_path):
+        adapter = UniviewExportAdapter()
+        unv_file = tmp_path / "server_room.dat"
+        unv_file.write_bytes(b"\x00\x00UNVREC\x05\x00")
+
+        resp = adapter.identify(unv_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "UNVREC" in resp.basis
+
+    def test_identify_by_uvf_extension(self, tmp_path):
+        adapter = UniviewExportAdapter()
+        uvf_file = tmp_path / "cam05.uvf"
+        uvf_file.write_bytes(b"\x00\x00\x00\x00")
+
+        resp = adapter.identify(uvf_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "MEDIUM"
+        assert ".uvf" in resp.basis
+
+    def test_capabilities_matrix(self):
+        adapter = UniviewExportAdapter()
+        caps = adapter.capabilities()
+        assert caps.status == "SUPPORTED"
+        assert caps.data["vendor_name"] == "Uniview Technologies (UNV)"
+        assert "ubvr_packet_parsing" in caps.data["features"]
+        assert len(caps.limitations) > 0
+
+
+class TestHoneywellExportAdapter:
+    """Test suite for Honeywell Security surveillance export adapter."""
+
+    def test_identify_by_honeywell_magic(self, tmp_path):
+        adapter = HoneywellExportAdapter()
+        hos_file = tmp_path / "hq_gate.bin"
+        hos_file.write_bytes(b"HONEYWELL\x00\x01clip_data")
+
+        resp = adapter.identify(hos_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "HONEYWELL" in resp.basis
+        assert resp.data["vendor"] == "Honeywell Security"
+
+    def test_identify_by_hos_sync_tag(self, tmp_path):
+        adapter = HoneywellExportAdapter()
+        hos_file = tmp_path / "feed.264"
+        hos_file.write_bytes(b"HOS\x01\x00\x01")
+
+        resp = adapter.identify(hos_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "HOS" in resp.basis
+
+    def test_identify_by_hos_extension(self, tmp_path):
+        adapter = HoneywellExportAdapter()
+        hos_file = tmp_path / "gate.hos"
+        hos_file.write_bytes(b"\x00\x00\x00\x00")
+
+        resp = adapter.identify(hos_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "MEDIUM"
+        assert ".hos" in resp.basis
+
+    def test_capabilities_matrix(self):
+        adapter = HoneywellExportAdapter()
+        caps = adapter.capabilities()
+        assert caps.status == "SUPPORTED"
+        assert caps.data["vendor_name"] == "Honeywell Security"
+        assert "hos_packet_parsing" in caps.data["features"]
+        assert len(caps.limitations) > 0
+
+
 class TestAdapterRegistryIntegration:
     """Integration test suite for AdapterRegistry dispatch and profile sync."""
 
@@ -191,14 +323,15 @@ class TestAdapterRegistryIntegration:
         adapter_ids = [a.ADAPTER_ID for a in adapters]
         assert "dahua_export" in adapter_ids
         assert "hikvision_export" in adapter_ids
+        assert "cpplus_export" in adapter_ids
+        assert "uniview_export" in adapter_ids
+        assert "honeywell_export" in adapter_ids
         assert "tplink_onvif" in adapter_ids
         assert "generic_media" in adapter_ids
         assert "unknown_source" in adapter_ids
 
     def test_detection_prioritizes_dahua_over_generic(self, tmp_path):
         registry = AdapterRegistry()
-
-        # .dav file should match DahuaExportAdapter before GenericMediaAdapter
         dav_file = tmp_path / "evidence.dav"
         dav_file.write_bytes(b"DHAV\x00\x01\x02\x03")
 
@@ -207,13 +340,35 @@ class TestAdapterRegistryIntegration:
 
     def test_detection_prioritizes_hikvision_over_generic(self, tmp_path):
         registry = AdapterRegistry()
-
-        # .mp4 file with HIKVISION magic should match HikvisionExportAdapter
         hik_mp4 = tmp_path / "evidence.mp4"
         hik_mp4.write_bytes(b"\x00\x00\x00\x20HIKVISION\x00\x01\x02")
 
         detected = registry.detect_adapter(hik_mp4)
         assert detected.ADAPTER_ID == "hikvision_export"
+
+    def test_detection_prioritizes_cpplus_over_generic(self, tmp_path):
+        registry = AdapterRegistry()
+        cp_file = tmp_path / "perimeter.dav"
+        cp_file.write_bytes(b"CPPLUS\x04\x00")
+
+        detected = registry.detect_adapter(cp_file)
+        assert detected.ADAPTER_ID == "cpplus_export"
+
+    def test_detection_prioritizes_uniview_over_generic(self, tmp_path):
+        registry = AdapterRegistry()
+        unv_file = tmp_path / "server.uvf"
+        unv_file.write_bytes(b"UBVR\x00\x01")
+
+        detected = registry.detect_adapter(unv_file)
+        assert detected.ADAPTER_ID == "uniview_export"
+
+    def test_detection_prioritizes_honeywell_over_generic(self, tmp_path):
+        registry = AdapterRegistry()
+        hos_file = tmp_path / "gate.hos"
+        hos_file.write_bytes(b"HONEYWELL\x00\x01")
+
+        detected = registry.detect_adapter(hos_file)
+        assert detected.ADAPTER_ID == "honeywell_export"
 
     def test_detection_falls_back_to_generic_for_standard_mp4(self, tmp_path):
         registry = AdapterRegistry()
@@ -238,12 +393,15 @@ class TestAdapterRegistryIntegration:
 
         with session_scope() as session:
             profiles = registry.sync_adapter_profiles(session)
-            assert len(profiles) >= 5
+            assert len(profiles) >= 8
 
             stored = session.query(AdapterProfile).all()
-            assert len(stored) >= 5
+            assert len(stored) >= 8
             stored_ids = {p.adapter_id for p in stored}
             assert "dahua_export" in stored_ids
             assert "hikvision_export" in stored_ids
+            assert "cpplus_export" in stored_ids
+            assert "uniview_export" in stored_ids
+            assert "honeywell_export" in stored_ids
             assert "tplink_onvif" in stored_ids
             assert "generic_media" in stored_ids

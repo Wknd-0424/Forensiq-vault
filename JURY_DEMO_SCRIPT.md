@@ -44,44 +44,53 @@ Demonstrate to the evaluators and technical jury that **ForensIQ Vault** solves 
 
 ---
 
-### Phase 2: Ingestion, Streaming Hashing & Read-Only Vaulting (0:45 - 1:45)
+### Phase 2: Seizure Forensic Imaging & File Ingestion (0:45 - 1:45)
 **Spoken Dialogue**:
-> *"Now we ingest raw surveillance footage. As the file is imported, ForensIQ Vault streams dual cryptographic hashes—SHA-256 and MD5 simultaneously in chunks, without loading the whole file into RAM.*
+> *"Most tools start after files are exported from a DVR. ForensIQ Vault starts at the moment of physical seizure.
 > 
-> *It places the original in a secure vault folder, applies operating system read-only locks (`chmod 0444`), generates an atomic companion `.manifest.json`, and creates an exact working copy for forensic analysis."*
+> Watch our **Forensic Bit-Stream Acquisition** engine in action: with write-block protection active, it reads the raw storage device sequentially in fixed blocks, streaming dual SHA-256 and MD5 hashes in real-time. On completion, it performs an independent read-back verification pass, writes a cryptographically sealed `imaging_manifest.json`, locks the original `.img` read-only (`chmod 0444`), and commits `IMAGE_CREATED` and `IMAGE_VERIFIED` to the immutable custody chain.
+> 
+> We can also ingest pre-exported files with identical cryptographic rigor."*
 
 **Action on Screen**:
 1. Navigate to **Evidence Import** page.
-2. Select `sample_evidence/EX01_Dahua_CAM01_Entrance.dav`.
-3. Fill Exhibit Number: `EX-01-DAHUA`.
-4. Click **Start Ingestion**.
-5. Show the live streaming progress bar, completed SHA-256 / MD5 digest cards, and atomic manifest generation.
-6. Open `Evidence Detail` page to demonstrate the "Verified Working Copy" badge.
+2. Click the **Forensic Acquisition (.img)** tab.
+3. Click **Load EX04 Demo Dump** (`sample_evidence/EX04_Damaged_DVR_Carve_Target.raw`).
+4. Point out the active **Simulated Write-Blocked Protection** invariant and block size selector (64 KB).
+5. Click **Acquire Forensic Bit-Stream Image (.img)**.
+6. Observe the live dual progress bar, the real-time acquisition console computing SHA-256 + MD5, passing independent read-back verification, locking read-only attributes, and writing the companion manifest.
+7. Show the newly acquired `.img` exhibit appearing in the active case evidence list with its verified working copy.
 
 ---
 
-### Phase 3: Multi-Vendor Decoders & Live Video Carving (1:45 - 2:45)
+### Phase 3: Multi-Vendor Decoders (6 OEMs) & Live Video Carving (1:45 - 2:45)
 **Spoken Dialogue**:
-> *"CCTV vendors use proprietary packet structures. Notice our Multi-Vendor Adapter engine. It automatically identifies Dahua DHAV packets, Hikvision HKAA headers, and TP-Link ONVIF streams.*
+> *"CCTV vendors use proprietary packet structures and containers. ForensIQ Vault provides modular adapter profiles covering 6 major OEMs: **Dahua, Hikvision, CP Plus, Uniview, Honeywell Security, and TP-Link VIGI/Tapo**.
 > 
-> *What if the DVR file system was wiped or physically corrupted by water or power failure? Standard media players crash. Let me demonstrate our low-level Annex-B NAL unit carver."*
+> What if the DVR file system was wiped or physically corrupted by water or power failure? Standard media players crash. Let me demonstrate our two-tier recovery engine: first scanning proprietary filesystem indices (like Dahua DHFS), and falling back to low-level Annex-B NAL unit carving."*
 
 **Action on Screen**:
 1. Navigate to **Adapter Capabilities & Carving** page.
-2. Show the **Multi-Vendor Profile Matrix** (Dahua, Hikvision, TP-Link, Generic).
+2. Show the **Multi-Vendor Profile Matrix** listing Dahua, Hikvision, CP Plus, Uniview, Honeywell, and TP-Link.
 3. Select `EX04_Damaged_DVR_Carve_Target.raw`.
-4. Show the **Forensic Hex Dump** showing corrupt partition noise (`\xAA\x55...`).
+4. Show the **Forensic Hex Dump** displaying wiped partition headers.
 5. Click **Carve Video Stream**.
-6. Watch the worker thread scan the byte stream, locate Annex-B start codes (`0x000001` / `0x00000001`), identify H.264 SPS, PPS, IDR keyframes, and reassemble an intact, playable `.h264` derivative in the segregated derivative vault!
+6. Watch the carver scan byte streams, locate Annex-B start codes (`0x000001`/`0x00000001`), extract H.264 SPS, PPS, and IDR keyframes, and reassemble an intact, playable `.h264` derivative in the segregated vault folder with cryptographic manifests!
 7. Point out the statutory recovery disclaimer and the new `DERIVATIVE_CREATED` custody event.
 
 ---
 
 ### Phase 4: Multi-Camera Timeline Normalization & Ethical AI Triage (2:45 - 3:45)
 **Spoken Dialogue**:
-> *"In multi-camera investigations, individual camera clocks drift. If Camera 1 is 2 minutes behind real time, cross-camera chronology is corrupted.*
+> *"In multi-camera investigations, individual camera clocks drift. If Camera 1 is 2 minutes behind real time, cross-camera chronology is corrupted. ForensIQ Vault preserves the raw camera timestamp forever, but calculates a normalized UTC timeline.
 > 
-> *ForensIQ Vault preserves the raw camera timestamp forever, but calculates a normalized UTC timestamp. Furthermore, our AI triage engine pinpoints motion, vehicles, and scene changes. Notice: **Biometric facial recognition is strictly blocked by design** to prevent privacy violations and algorithmic bias. All AI findings require human analyst confirmation."*
+> Now, regarding AI: Problem Statement 26150 mentions 'face, object, and motion detection'. We want to highlight a deliberate, principled engineering and legal decision:
+> 
+> **ForensIQ Vault strictly excludes biometric facial recognition and identity matching by architectural design.**
+> 
+> Under Section 63 of the Bharatiya Sakshya Adhiniyam, 2023 (BSA) and Section 65B of the Indian Evidence Act, probabilistic biometric matches without certified ground-truth templates create high risks of false positives and evidence suppression in court. Furthermore, under India's DPDP Act 2023 and the Puttaswamy privacy judgment, unconstrained biometric processing of bystander CCTV is legally hazardous.
+> 
+> We therefore restrict AI triage strictly to object categories—vehicles, person silhouettes, motion dynamics, and opt-in anonymized presence counts—with zero biometric templates. Crucially, every AI detection is initialized to PENDING and requires human forensic examiner confirmation."*
 
 **Action on Screen**:
 1. Navigate to **Timeline & AI Triage** page.
@@ -89,6 +98,7 @@ Demonstrate to the evaluators and technical jury that **ForensIQ Vault** solves 
 3. Apply a `+120.0s` offset adjustment with reason: `"DVR clock drift relative to NTP reference"`.
 4. Show the timeline instantly updating while keeping raw device time untouched.
 5. Review an AI candidate detection (`vehicle`), click **Confirm Finding**, and type analyst notes.
+6. Show the ethical AI compliance badge confirming zero biometric template extraction.
 
 ---
 

@@ -30,6 +30,21 @@ These synthetic evidence files are prepared for testing and live demonstration o
   3. Click **Carve Video Stream**.
   4. The Annex-B NAL unit carver scans the stream, identifies SPS, PPS, IDR keyframes, and slices, and reassembles a clean `.h264` derivative in the segregated vault folder with cryptographic manifests!
 
+### 5. `EX05_CPPlus_CAM04_Perimeter.dav`
+- **Vendor / Format**: CP Plus (`.dav` container with `CPPLUS` / `CPPL` headers).
+- **Camera Location**: Camera 04 (Perimeter Fence).
+- **Test Use Case**: Demonstrates CP Plus proprietary signature recognition and Orange/Indigo series surveillance export support.
+
+### 6. `EX06_Uniview_CAM05_ServerRoom.uvf`
+- **Vendor / Format**: Uniview Technologies (`.uvf` container with `UBVR` / `UNVREC` signatures).
+- **Camera Location**: Camera 05 (Server Room).
+- **Test Use Case**: Demonstrates Uniview UNV surveillance export identification and UVF container parsing.
+
+### 7. `EX07_Honeywell_CAM06_HQGate.hos`
+- **Vendor / Format**: Honeywell Security (`.hos` container with `HONEYWELL` / `HOS` / `MAXPRO` headers).
+- **Camera Location**: Camera 06 (HQ Main Gate).
+- **Test Use Case**: Demonstrates Honeywell MAXPRO / Performance Series NVR video clip detection.
+
 ---
 
 ## Forensic Invariant Note

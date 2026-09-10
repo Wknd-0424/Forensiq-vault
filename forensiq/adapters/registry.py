@@ -18,10 +18,13 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from forensiq.adapters.base import BaseAdapter
+from forensiq.adapters.cpplus_export import CPPlusExportAdapter
 from forensiq.adapters.dahua_export import DahuaExportAdapter
 from forensiq.adapters.generic_media import GenericMediaAdapter
 from forensiq.adapters.hikvision_export import HikvisionExportAdapter
+from forensiq.adapters.honeywell_export import HoneywellExportAdapter
 from forensiq.adapters.tplink_onvif_rtsp import TPLinkAdapter
+from forensiq.adapters.uniview_export import UniviewExportAdapter
 from forensiq.adapters.unknown_source import UnknownSourceAdapter
 from forensiq.models.device import AdapterProfile
 
@@ -38,6 +41,9 @@ class AdapterRegistry:
         # Register adapters in prioritized detection order
         self.register(DahuaExportAdapter())
         self.register(HikvisionExportAdapter())
+        self.register(CPPlusExportAdapter())
+        self.register(UniviewExportAdapter())
+        self.register(HoneywellExportAdapter())
         self.register(TPLinkAdapter())
         self.register(GenericMediaAdapter())
         self.register(self._fallback_adapter)
@@ -58,20 +64,29 @@ class AdapterRegistry:
     def detect_adapter(self, source_path: Path) -> BaseAdapter:
         """
         Inspect source_path and return the best matching adapter.
-        Evaluates specialized vendor adapters first, then generic media,
-        falling back to UnknownSourceAdapter.
+        Prioritizes HIGH confidence (signature/magic match) over MEDIUM (extension match).
+        Falls back to GenericMediaAdapter or UnknownSourceAdapter.
         """
+        medium_match = None
+
         for adapter_id, adapter in self._adapters.items():
             if adapter_id == UnknownSourceAdapter.ADAPTER_ID:
                 continue
 
             try:
                 response = adapter.identify(source_path)
-                if response.status == "SUPPORTED" and response.confidence in ("HIGH", "MEDIUM"):
-                    logger.info("Detected adapter %s for %s", adapter_id, source_path.name)
-                    return adapter
+                if response.status == "SUPPORTED":
+                    if response.confidence == "HIGH":
+                        logger.info("Detected adapter %s (HIGH confidence) for %s", adapter_id, source_path.name)
+                        return adapter
+                    elif response.confidence == "MEDIUM" and medium_match is None:
+                        medium_match = adapter
             except Exception as exc:
                 logger.warning("Adapter %s failed identify on %s: %s", adapter_id, source_path.name, exc)
+
+        if medium_match is not None:
+            logger.info("Detected adapter %s (MEDIUM confidence) for %s", medium_match.ADAPTER_ID, source_path.name)
+            return medium_match
 
         logger.info("No specific adapter matched %s; using UnknownSourceAdapter", source_path.name)
         return self._fallback_adapter

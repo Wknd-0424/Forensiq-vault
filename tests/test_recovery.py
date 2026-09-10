@@ -20,9 +20,12 @@ from forensiq.services.case_service import create_case
 from forensiq.services.custody_service import get_chain_for_case
 from forensiq.services.recovery_service import (
     MANDATORY_RECOVERY_WARNING,
+    RECOVERY_TIER_1_FS_INDEX,
+    RECOVERY_TIER_2_STREAM_CARVING,
     carve_video_stream,
     list_recovery_results_for_evidence,
     scan_annex_b_nalus,
+    scan_dhfs_index_entries,
 )
 from forensiq.utils.hashing import hash_file
 from forensiq.utils.utc_utils import now_utc
@@ -238,3 +241,85 @@ class TestCarveVideoStream:
             results = list_recovery_results_for_evidence(session, ev_id)
             assert len(results) >= 1
             assert results[0].method == "ANNEX_B_NALU_CARVER"
+
+    def test_scan_dhfs_index_entries(self):
+        import struct
+        # Construct synthetic DHFS index entry (channel 4, start_ts=1700000000, offset=128, len=512, deleted=True)
+        dhfs_entry = (
+            b"DHFS"
+            + struct.pack("<H", 4)
+            + struct.pack("<I", 1700000000)
+            + struct.pack("<I", 1700000300)
+            + struct.pack("<I", 128)
+            + struct.pack("<I", 512)
+            + struct.pack("<B", 0x02)  # Deleted flag
+            + b"\x00"                  # Padding to 24 bytes
+        )
+        buffer = dhfs_entry + (b"\x00" * 1024)
+
+        entries = scan_dhfs_index_entries(buffer)
+        assert len(entries) == 1
+        assert entries[0]["channel_id"] == 4
+        assert entries[0]["start_timestamp"] == 1700000000
+        assert entries[0]["data_offset"] == 128
+        assert entries[0]["data_length"] == 512
+        assert entries[0]["is_deleted"] is True
+
+    def test_tier1_dhfs_filesystem_index_recovery(self, evidence_fixture):
+        import struct
+        case_id, ev_id, wc_file = evidence_fixture
+
+        # Video chunk to place at offset 64
+        video_payload = (
+            b"\x00\x00\x00\x01\x67\x42\x00\x1f\xda"           # SPS
+            b"\x00\x00\x00\x01\x68\xce\x3c\x80"               # PPS
+            b"\x00\x00\x00\x01\x65\x88\x84\x00\x10\xff"       # IDR Keyframe
+            b"\x00\x00\x01\x41\x9a\x00\x02\x01"               # Slice
+        )
+        offset = 64
+        length = len(video_payload)
+
+        # 24-byte DHFS entry at start
+        dhfs_table = (
+            b"DHFS"
+            + struct.pack("<H", 2)               # Channel 2
+            + struct.pack("<I", 1760000000)      # Start time
+            + struct.pack("<I", 1760000060)      # End time
+            + struct.pack("<I", offset)          # Data offset
+            + struct.pack("<I", length)          # Data length
+            + struct.pack("<B", 0x02)            # Flag: deleted recording
+            + b"\x00"
+        )
+        padding = b"\xaa" * (offset - len(dhfs_table))
+        full_disk_image = dhfs_table + padding + video_payload + (b"\xff" * 128)
+        wc_file.write_bytes(full_disk_image)
+
+        with session_scope() as session:
+            rec_res, derivative_path = carve_video_stream(
+                session=session,
+                evidence_id=ev_id,
+                actor_id="Investigator DHFS",
+            )
+
+            assert rec_res is not None
+            assert rec_res.status == RecoveryStatus.COMPLETE.value
+            assert rec_res.confidence == "HIGH"
+            assert rec_res.method == "TIER_1_DHFS_INDEX_RECOVERY"
+            assert derivative_path is not None
+            assert derivative_path.exists()
+            assert derivative_path.name.startswith("tier1_fs_")
+
+            # Check manifest records Tier 1 and filesystem metadata
+            manifest_path = derivative_path.with_name(f"{derivative_path.name}.manifest.json")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            assert manifest["recovery_tier"] == RECOVERY_TIER_1_FS_INDEX
+            assert manifest["filesystem_type"] == "DHFS"
+            assert manifest["channel_id"] == 2
+            assert manifest["is_deleted"] is True
+
+            # Verify custody ledger records Tier 1
+            events = get_chain_for_case(session, case_id)
+            attempt = [e for e in events if e.action == CustodyAction.RECOVERY_ATTEMPTED.value][0]
+            details = json.loads(attempt.details_json) if attempt.details_json else {}
+            assert details.get("recovery_tier") == RECOVERY_TIER_1_FS_INDEX
+            assert "Tier 1 DHFS" in attempt.reason
