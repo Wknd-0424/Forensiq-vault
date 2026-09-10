@@ -16,8 +16,10 @@ import pytest
 
 from forensiq.adapters.cpplus_export import CPPlusExportAdapter
 from forensiq.adapters.dahua_export import DahuaExportAdapter
+from forensiq.adapters.godrej_export import GodrejExportAdapter
 from forensiq.adapters.hikvision_export import HikvisionExportAdapter
 from forensiq.adapters.honeywell_export import HoneywellExportAdapter
+from forensiq.adapters.matrix_export import MatrixExportAdapter
 from forensiq.adapters.registry import AdapterRegistry, get_registry
 from forensiq.adapters.tplink_onvif_rtsp import TPLinkAdapter
 from forensiq.adapters.uniview_export import UniviewExportAdapter
@@ -313,6 +315,118 @@ class TestHoneywellExportAdapter:
         assert len(caps.limitations) > 0
 
 
+class TestGodrejExportAdapter:
+    """Test suite for Godrej Security Solutions surveillance export adapter."""
+
+    def test_identify_by_magic_bytes(self, tmp_path):
+        adapter = GodrejExportAdapter()
+
+        gdr_file = tmp_path / "stream.bin"
+        gdr_file.write_bytes(b"\x00\x00GODREJ_SEC\x01\x02\x03\x04video_payload")
+
+        resp = adapter.identify(gdr_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "Godrej" in resp.basis
+        assert resp.data["vendor"] == "Godrej Security Solutions"
+
+    def test_identify_by_seethru_header(self, tmp_path):
+        adapter = GodrejExportAdapter()
+
+        st_file = tmp_path / "export.raw"
+        st_file.write_bytes(b"SEETHRU_EXPORT_001\x00\x01")
+
+        resp = adapter.identify(st_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "SEETHRU" in resp.basis
+
+    def test_identify_by_gdr_extension(self, tmp_path):
+        adapter = GodrejExportAdapter()
+
+        gdr_file = tmp_path / "ch07_20260906.gdr"
+        gdr_file.write_bytes(b"\x00\x00\x00\x00")
+
+        resp = adapter.identify(gdr_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "MEDIUM"
+        assert ".gdr" in resp.basis
+
+    def test_identify_unsupported_file(self, tmp_path):
+        adapter = GodrejExportAdapter()
+
+        other = tmp_path / "data.csv"
+        other.write_text("a,b,c", encoding="utf-8")
+
+        resp = adapter.identify(other)
+        assert resp.status == "UNSUPPORTED"
+        assert resp.confidence == "NONE"
+
+    def test_capabilities_matrix(self):
+        adapter = GodrejExportAdapter()
+        caps = adapter.capabilities()
+        assert caps.status == "SUPPORTED"
+        assert caps.data["vendor_name"] == "Godrej Security Solutions"
+        assert "godrej_packet_parsing" in caps.data["features"]
+        assert len(caps.limitations) > 0
+
+
+class TestMatrixExportAdapter:
+    """Test suite for Matrix Comsec surveillance export adapter."""
+
+    def test_identify_by_magic_bytes(self, tmp_path):
+        adapter = MatrixExportAdapter()
+
+        sat_file = tmp_path / "stream.bin"
+        sat_file.write_bytes(b"\x00\x00SATATYA_EXPORT\x01\x02\x03\x04video_payload")
+
+        resp = adapter.identify(sat_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "Matrix" in resp.basis
+        assert resp.data["vendor"] == "Matrix Comsec"
+
+    def test_identify_by_matrix_header(self, tmp_path):
+        adapter = MatrixExportAdapter()
+
+        mat_file = tmp_path / "export.raw"
+        mat_file.write_bytes(b"MATRIX_SEC_STREAM\x00\x01")
+
+        resp = adapter.identify(mat_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "HIGH"
+        assert "MATRIX" in resp.basis
+
+    def test_identify_by_sat_extension(self, tmp_path):
+        adapter = MatrixExportAdapter()
+
+        sat_file = tmp_path / "ch08_20260906.sat"
+        sat_file.write_bytes(b"\x00\x00\x00\x00")
+
+        resp = adapter.identify(sat_file)
+        assert resp.status == "SUPPORTED"
+        assert resp.confidence == "MEDIUM"
+        assert ".sat" in resp.basis
+
+    def test_identify_unsupported_file(self, tmp_path):
+        adapter = MatrixExportAdapter()
+
+        other = tmp_path / "data.csv"
+        other.write_text("a,b,c", encoding="utf-8")
+
+        resp = adapter.identify(other)
+        assert resp.status == "UNSUPPORTED"
+        assert resp.confidence == "NONE"
+
+    def test_capabilities_matrix(self):
+        adapter = MatrixExportAdapter()
+        caps = adapter.capabilities()
+        assert caps.status == "SUPPORTED"
+        assert caps.data["vendor_name"] == "Matrix Comsec"
+        assert "matrix_packet_parsing" in caps.data["features"]
+        assert len(caps.limitations) > 0
+
+
 class TestAdapterRegistryIntegration:
     """Integration test suite for AdapterRegistry dispatch and profile sync."""
 
@@ -326,6 +440,8 @@ class TestAdapterRegistryIntegration:
         assert "cpplus_export" in adapter_ids
         assert "uniview_export" in adapter_ids
         assert "honeywell_export" in adapter_ids
+        assert "godrej_export" in adapter_ids
+        assert "matrix_export" in adapter_ids
         assert "tplink_onvif" in adapter_ids
         assert "generic_media" in adapter_ids
         assert "unknown_source" in adapter_ids
@@ -370,6 +486,22 @@ class TestAdapterRegistryIntegration:
         detected = registry.detect_adapter(hos_file)
         assert detected.ADAPTER_ID == "honeywell_export"
 
+    def test_detection_prioritizes_godrej_over_generic(self, tmp_path):
+        registry = AdapterRegistry()
+        gdr_file = tmp_path / "warehouse.gdr"
+        gdr_file.write_bytes(b"GODREJ\x07\x00")
+
+        detected = registry.detect_adapter(gdr_file)
+        assert detected.ADAPTER_ID == "godrej_export"
+
+    def test_detection_prioritizes_matrix_over_generic(self, tmp_path):
+        registry = AdapterRegistry()
+        sat_file = tmp_path / "lobby.sat"
+        sat_file.write_bytes(b"MATRIX\x08\x00")
+
+        detected = registry.detect_adapter(sat_file)
+        assert detected.ADAPTER_ID == "matrix_export"
+
     def test_detection_falls_back_to_generic_for_standard_mp4(self, tmp_path):
         registry = AdapterRegistry()
 
@@ -393,15 +525,17 @@ class TestAdapterRegistryIntegration:
 
         with session_scope() as session:
             profiles = registry.sync_adapter_profiles(session)
-            assert len(profiles) >= 8
+            assert len(profiles) >= 10
 
             stored = session.query(AdapterProfile).all()
-            assert len(stored) >= 8
+            assert len(stored) >= 10
             stored_ids = {p.adapter_id for p in stored}
             assert "dahua_export" in stored_ids
             assert "hikvision_export" in stored_ids
             assert "cpplus_export" in stored_ids
             assert "uniview_export" in stored_ids
             assert "honeywell_export" in stored_ids
+            assert "godrej_export" in stored_ids
+            assert "matrix_export" in stored_ids
             assert "tplink_onvif" in stored_ids
             assert "generic_media" in stored_ids

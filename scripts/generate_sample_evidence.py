@@ -132,6 +132,36 @@ def generate_honeywell_hos(output_path: Path) -> None:
     print(f"  [+] Created Honeywell exhibit: {output_path.name} ({len(data)} bytes)")
 
 
+def generate_godrej_gdr(output_path: Path) -> None:
+    """Create a realistic Godrej .gdr exhibit with GODREJ/SEETHRU headers."""
+    godrej_header = (
+        b"GODREJ"                               # Master vendor magic bytes (6 bytes)
+        b"SEETHRU"                             # SeeThru series tag
+        b"\x07\x00"                            # Channel 7
+        b"\x20\x26\x09\x06\x10\x35\x00\x00"    # Timestamp: 2026-09-06 10:35:00
+        b"GDRJ\x01\x00"                        # Packet frame sync
+    )
+    video_stream = build_annex_b_h264_stream(num_frames=20)
+    data = godrej_header + video_stream
+    output_path.write_bytes(data)
+    print(f"  [+] Created Godrej exhibit: {output_path.name} ({len(data)} bytes)")
+
+
+def generate_matrix_sat(output_path: Path) -> None:
+    """Create a realistic Matrix .sat exhibit with MATRIX/SATATYA headers."""
+    matrix_header = (
+        b"MATRIX"                              # Master vendor magic bytes (6 bytes)
+        b"SATATYA"                             # SATATYA series tag
+        b"\x08\x00"                            # Channel 8
+        b"\x20\x26\x09\x06\x10\x36\x00\x00"    # Timestamp: 2026-09-06 10:36:00
+        b"MTRX\x00\x10"                        # Stream sync tag
+    )
+    video_stream = build_annex_b_h264_stream(num_frames=22)
+    data = matrix_header + video_stream
+    output_path.write_bytes(data)
+    print(f"  [+] Created Matrix exhibit: {output_path.name} ({len(data)} bytes)")
+
+
 def generate_corrupted_carve_target(output_path: Path) -> None:
     """Create a corrupted DVR raw disk dump with salvageable Annex-B H.264 streams."""
     # Corrupt sector noise simulating wiped/damaged partition tables and bad sectors
@@ -195,6 +225,16 @@ These synthetic evidence files are prepared for testing and live demonstration o
 - **Camera Location**: Camera 06 (HQ Main Gate).
 - **Test Use Case**: Demonstrates Honeywell MAXPRO / Performance Series NVR video clip detection.
 
+### 8. `EX08_Godrej_CAM07_Warehouse.gdr`
+- **Vendor / Format**: Godrej Security Solutions (`.gdr` container with `GODREJ` / `SEETHRU` / `GDRJ` headers).
+- **Camera Location**: Camera 07 (Warehouse Interior).
+- **Test Use Case**: Demonstrates Godrej SeeThru/EVE surveillance container parsing, packet sync tag detection, and stream analysis.
+
+### 9. `EX09_Matrix_CAM08_MainLobby.sat`
+- **Vendor / Format**: Matrix Comsec (`.sat` container with `MATRIX` / `SATATYA` / `MTRX` headers).
+- **Camera Location**: Camera 08 (Main Lobby).
+- **Test Use Case**: Demonstrates Matrix SATATYA series NVR export identification and stream metadata extraction.
+
 ---
 
 ## Forensic Invariant Note
@@ -218,6 +258,8 @@ def main() -> None:
     generate_cpplus_dav(SAMPLE_DIR / "EX05_CPPlus_CAM04_Perimeter.dav")
     generate_uniview_uvf(SAMPLE_DIR / "EX06_Uniview_CAM05_ServerRoom.uvf")
     generate_honeywell_hos(SAMPLE_DIR / "EX07_Honeywell_CAM06_HQGate.hos")
+    generate_godrej_gdr(SAMPLE_DIR / "EX08_Godrej_CAM07_Warehouse.gdr")
+    generate_matrix_sat(SAMPLE_DIR / "EX09_Matrix_CAM08_MainLobby.sat")
     generate_readme(SAMPLE_DIR)
 
     print("\n[OK] All sample exhibits generated in: sample_evidence/\n")

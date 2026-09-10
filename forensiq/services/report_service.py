@@ -44,6 +44,7 @@ from forensiq.models.report import Report
 from forensiq.models.timeline import TimelineEvent, VideoSegment
 from forensiq.models.validation import ValidationRun
 from forensiq.services.custody_service import get_chain_for_case, record_event, verify_chain
+from forensiq.services.timeline_service import get_case_cross_camera_correlations
 from forensiq.utils.hashing import hash_file
 from forensiq.utils.utc_utils import now_utc, to_iso8601
 
@@ -93,6 +94,13 @@ def _collect_report_data(session: Session, case_id: str, actor_id: str = "Invest
         .order_by(TimelineEvent.normalized_timestamp_utc.asc())
         .all()
     )
+
+    # Cross-camera correlations
+    try:
+        cross_camera_correlations = get_case_cross_camera_correlations(session, case_id)
+    except Exception as exc:
+        logger.warning("Failed computing cross-camera correlations for case %s: %s", case_id, exc)
+        cross_camera_correlations = []
 
     # AI detections
     ai_detections_raw = (
@@ -179,6 +187,7 @@ def _collect_report_data(session: Session, case_id: str, actor_id: str = "Invest
         "custody_events": custody_events_data,
         "timeline_events_raw": timeline_events_raw,
         "timeline_events": timeline_events_data,
+        "cross_camera_correlations": cross_camera_correlations,
         "ai_detections": ai_detections_raw,
         "ai_confirmed_findings": ai_confirmed,
         "ai_preliminary_annotations": ai_preliminary,
@@ -198,6 +207,7 @@ def _render_html_report(data: dict[str, Any], timestamp_str: str) -> str:
         "evidence_items": data["evidence_items"],
         "evidence_analysis": data["evidence_analysis"],
         "timeline_events": data["timeline_events"],
+        "cross_camera_correlations": data.get("cross_camera_correlations", []),
         "ai_detections": data["ai_detections"],
         "ai_confirmed_findings": data["ai_confirmed_findings"],
         "ai_preliminary_annotations": data["ai_preliminary_annotations"],
@@ -300,6 +310,7 @@ def _render_json_dossier(data: dict[str, Any], timestamp_str: str, actor_id: str
             }
             for te in data["timeline_events_raw"]
         ],
+        "cross_camera_correlations": data.get("cross_camera_correlations", []),
         "ai_detections": [
             {
                 "id": det.id,

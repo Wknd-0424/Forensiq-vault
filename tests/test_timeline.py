@@ -25,11 +25,14 @@ from forensiq.models.timeline import TimelineEvent, VideoSegment
 from forensiq.services.case_service import create_case
 from forensiq.services.timeline_service import (
     apply_timestamp_normalization,
+    correlate_cross_camera_events,
     create_or_update_segment_from_evidence,
     create_timeline_event,
     detect_timeline_gaps,
     export_timeline_csv,
     export_timeline_json,
+    extract_event_entity_class,
+    get_case_cross_camera_correlations,
     get_case_timeline,
     get_segments_for_case,
     parse_iso_or_standard_datetime,
@@ -315,3 +318,210 @@ def test_timeline_ai_page_refresh(qapp, timeline_fixture):
     assert page._triage_btn.isEnabled()
     assert page._apply_norm_btn.isEnabled()
     assert page._event_table.rowCount() >= 1
+    assert hasattr(page, "_corr_table")
+    assert hasattr(page, "_corr_window_spin")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cross-Camera Event Correlation Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_extract_event_entity_class():
+    assert extract_event_entity_class("AI Detection: person (0.85)") == "person"
+    assert extract_event_entity_class("AI Detection: car (0.78)") == "vehicle"
+    assert extract_event_entity_class("AI Detection: motorcycle (0.92)") == "vehicle"
+    assert extract_event_entity_class("AI Detection: truck (0.64)") == "vehicle"
+    assert extract_event_entity_class("AI Detection: motion (0.70)") == "motion"
+    assert extract_event_entity_class("AI Detection: scene_change (0.99)") == "scene_change"
+    assert extract_event_entity_class("AI Detection: anomaly (0.81)") == "anomaly"
+    assert extract_event_entity_class("Pedestrian walking past gate") == "person"
+    assert extract_event_entity_class("Blue vehicle entering parking") == "vehicle"
+    assert extract_event_entity_class("Evidence segment start") == "other"
+    assert extract_event_entity_class(None) == "other"
+
+
+def test_correlate_cross_camera_events_within_window():
+    t_base = datetime(2026, 3, 1, 10, 30, 0, tzinfo=timezone.utc)
+
+    # Camera 1 detects person at T=0
+    # Camera 2 detects person at T=12s
+    # Camera 3 detects person at T=25s
+    events = [
+        TimelineEvent(
+            id="ev-1",
+            evidence_id="EVD-01",
+            description="AI Detection: person (0.85)",
+            normalized_timestamp_utc=t_base,
+            confidence="HIGH",
+            analyst_status="PENDING",
+        ),
+        TimelineEvent(
+            id="ev-2",
+            evidence_id="EVD-02",
+            description="AI Detection: person (0.88)",
+            normalized_timestamp_utc=t_base + timedelta(seconds=12),
+            confidence="HIGH",
+            analyst_status="PENDING",
+        ),
+        TimelineEvent(
+            id="ev-3",
+            evidence_id="EVD-03",
+            description="AI Detection: person (0.79)",
+            normalized_timestamp_utc=t_base + timedelta(seconds=25),
+            confidence="HIGH",
+            analyst_status="PENDING",
+        ),
+    ]
+
+    camera_map = {"EVD-01": "CAM-01-Gate", "EVD-02": "CAM-02-Lobby", "EVD-03": "CAM-03-Hallway"}
+    correlations = correlate_cross_camera_events(events, time_window_seconds=30.0, camera_map=camera_map)
+
+    assert len(correlations) == 1
+    corr = correlations[0]
+    assert corr["entity_type"] == "person"
+    assert corr["camera_count"] == 3
+    assert corr["event_count"] == 3
+    assert corr["time_span_seconds"] == 25.0
+    assert "CAM-01-Gate" in corr["cameras"]
+    assert "CAM-02-Lobby" in corr["cameras"]
+    assert "CAM-03-Hallway" in corr["cameras"]
+
+
+def test_correlate_cross_camera_events_outside_window_separated():
+    t_base = datetime(2026, 3, 1, 10, 30, 0, tzinfo=timezone.utc)
+
+    # Camera 1 detects person at T=0
+    # Camera 2 detects person at T=90s (diff = 90s > window 30s)
+    events = [
+        TimelineEvent(
+            id="ev-1",
+            evidence_id="EVD-01",
+            description="AI Detection: person (0.85)",
+            normalized_timestamp_utc=t_base,
+        ),
+        TimelineEvent(
+            id="ev-2",
+            evidence_id="EVD-02",
+            description="AI Detection: person (0.88)",
+            normalized_timestamp_utc=t_base + timedelta(seconds=90),
+        ),
+    ]
+
+    camera_map = {"EVD-01": "CAM-01", "EVD-02": "CAM-02"}
+    correlations = correlate_cross_camera_events(events, time_window_seconds=30.0, camera_map=camera_map)
+
+    # Since neither cluster spans >= 2 cameras, no cross-camera correlation should be declared
+    assert len(correlations) == 0
+
+
+def test_correlate_cross_camera_events_single_camera_ignored():
+    t_base = datetime(2026, 3, 1, 10, 30, 0, tzinfo=timezone.utc)
+
+    # Only Camera 1 detects person repeatedly
+    events = [
+        TimelineEvent(
+            id="ev-1",
+            evidence_id="EVD-01",
+            description="AI Detection: person (0.85)",
+            normalized_timestamp_utc=t_base,
+        ),
+        TimelineEvent(
+            id="ev-2",
+            evidence_id="EVD-01",
+            description="AI Detection: person (0.88)",
+            normalized_timestamp_utc=t_base + timedelta(seconds=5),
+        ),
+    ]
+
+    camera_map = {"EVD-01": "CAM-01"}
+    correlations = correlate_cross_camera_events(events, time_window_seconds=30.0, camera_map=camera_map)
+
+    assert len(correlations) == 0
+
+
+def test_correlate_cross_camera_events_different_entities_not_merged():
+    t_base = datetime(2026, 3, 1, 10, 30, 0, tzinfo=timezone.utc)
+
+    # Camera 1 detects person at T=0
+    # Camera 2 detects vehicle at T=5s
+    events = [
+        TimelineEvent(
+            id="ev-1",
+            evidence_id="EVD-01",
+            description="AI Detection: person (0.85)",
+            normalized_timestamp_utc=t_base,
+        ),
+        TimelineEvent(
+            id="ev-2",
+            evidence_id="EVD-02",
+            description="AI Detection: vehicle (0.91)",
+            normalized_timestamp_utc=t_base + timedelta(seconds=5),
+        ),
+    ]
+
+    camera_map = {"EVD-01": "CAM-01", "EVD-02": "CAM-02"}
+    correlations = correlate_cross_camera_events(events, time_window_seconds=30.0, camera_map=camera_map)
+
+    assert len(correlations) == 0
+
+
+def test_get_case_cross_camera_correlations_database_integration():
+    with session_scope() as session:
+        case = create_case(session, "CASE-CORR-01", "Cross Camera Correlation Case", "Investigator Holmes")
+
+        # Two evidence items representing two cameras
+        ev1 = EvidenceItem(
+            case_id=case.id,
+            evidence_number="EX-CAM-01",
+            source_filename="cam01_gate.mp4",
+            sanitized_filename="cam01_gate.mp4",
+            file_size_bytes=1000,
+            imported_by="Holmes",
+            imported_at_utc=now_utc(),
+        )
+        ev2 = EvidenceItem(
+            case_id=case.id,
+            evidence_number="EX-CAM-02",
+            source_filename="cam02_driveway.mp4",
+            sanitized_filename="cam02_driveway.mp4",
+            file_size_bytes=1000,
+            imported_by="Holmes",
+            imported_at_utc=now_utc(),
+        )
+        session.add_all([ev1, ev2])
+        session.flush()
+
+        t_base = datetime(2026, 3, 1, 14, 0, 0, tzinfo=timezone.utc)
+
+        # Event on Cam 1: Vehicle at 14:00:00
+        create_timeline_event(
+            session,
+            case_id=case.id,
+            event_type=TimelineEventType.AI_PRELIMINARY.value,
+            evidence_id=ev1.id,
+            raw_timestamp="2026-03-01T14:00:00Z",
+            normalized_utc=t_base,
+            description="AI Detection: vehicle (0.92)",
+        )
+
+        # Event on Cam 2: Vehicle at 14:00:18 (within 30s)
+        create_timeline_event(
+            session,
+            case_id=case.id,
+            event_type=TimelineEventType.AI_PRELIMINARY.value,
+            evidence_id=ev2.id,
+            raw_timestamp="2026-03-01T14:00:18Z",
+            normalized_utc=t_base + timedelta(seconds=18),
+            description="AI Detection: car (0.87)",
+        )
+
+        corrs = get_case_cross_camera_correlations(session, case.id, time_window_seconds=30.0)
+        assert len(corrs) == 1
+        c = corrs[0]
+        assert c["entity_type"] == "vehicle"
+        assert c["camera_count"] == 2
+        assert "EX-CAM-01" in c["cameras"]
+        assert "EX-CAM-02" in c["cameras"]
+        assert c["time_span_seconds"] == 18.0
+        assert len(c["events"]) == 2
+

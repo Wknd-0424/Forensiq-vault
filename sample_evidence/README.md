@@ -45,6 +45,16 @@ These synthetic evidence files are prepared for testing and live demonstration o
 - **Camera Location**: Camera 06 (HQ Main Gate).
 - **Test Use Case**: Demonstrates Honeywell MAXPRO / Performance Series NVR video clip detection.
 
+### 8. `EX08_Godrej_CAM07_Warehouse.gdr`
+- **Vendor / Format**: Godrej Security Solutions (`.gdr` container with `GODREJ` / `SEETHRU` / `GDRJ` headers).
+- **Camera Location**: Camera 07 (Warehouse Interior).
+- **Test Use Case**: Demonstrates Godrej SeeThru/EVE surveillance container parsing, packet sync tag detection, and stream analysis.
+
+### 9. `EX09_Matrix_CAM08_MainLobby.sat`
+- **Vendor / Format**: Matrix Comsec (`.sat` container with `MATRIX` / `SATATYA` / `MTRX` headers).
+- **Camera Location**: Camera 08 (Main Lobby).
+- **Test Use Case**: Demonstrates Matrix SATATYA series NVR export identification and stream metadata extraction.
+
 ---
 
 ## Forensic Invariant Note

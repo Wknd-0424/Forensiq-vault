@@ -22,7 +22,9 @@ from forensiq.adapters.cpplus_export import CPPlusExportAdapter
 from forensiq.adapters.dahua_export import DahuaExportAdapter
 from forensiq.adapters.generic_media import GenericMediaAdapter
 from forensiq.adapters.hikvision_export import HikvisionExportAdapter
+from forensiq.adapters.godrej_export import GodrejExportAdapter
 from forensiq.adapters.honeywell_export import HoneywellExportAdapter
+from forensiq.adapters.matrix_export import MatrixExportAdapter
 from forensiq.adapters.tplink_onvif_rtsp import TPLinkAdapter
 from forensiq.adapters.uniview_export import UniviewExportAdapter
 from forensiq.adapters.unknown_source import UnknownSourceAdapter
@@ -44,6 +46,8 @@ class AdapterRegistry:
         self.register(CPPlusExportAdapter())
         self.register(UniviewExportAdapter())
         self.register(HoneywellExportAdapter())
+        self.register(GodrejExportAdapter())
+        self.register(MatrixExportAdapter())
         self.register(TPLinkAdapter())
         self.register(GenericMediaAdapter())
         self.register(self._fallback_adapter)

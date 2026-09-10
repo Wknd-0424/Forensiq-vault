@@ -5,9 +5,9 @@
 [![Smart India Hackathon 2026](https://img.shields.io/badge/SIH-2026-orange.svg)](https://www.sih.gov.in/)
 [![Problem Statement ID](https://img.shields.io/badge/Problem%20Statement-26150-blue.svg)](#problem-statement)
 [![Organization](https://img.shields.io/badge/Organization-NTRO-green.svg)](#organization)
-[![Tests](https://img.shields.io/badge/Tests-250%20Passed-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/Tests-268%20Passed-brightgreen.svg)](#test-suite)
 [![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
-[![ML Models](https://img.shields.io/badge/ML%20Models-100%25%20F1--Score-brightgreen.svg)](#forensic-machine-learning-suite)
+[![ML Models](https://img.shields.io/badge/ML%20Models-98.6%25%20F1%20(Held--Out)-brightgreen.svg)](#forensic-machine-learning-suite)
 [![GUI](https://img.shields.io/badge/GUI-PySide6%20(Qt%20for%20Python)-green.svg)](https://wiki.qt.io/Qt_for_Python)
 
 ---
@@ -22,7 +22,7 @@
 
 ### The Forensic Challenge
 Law enforcement and national security agencies routinely seize digital video recorders (DVRs) and network video recorders (NVRs) from crime scenes. Investigators face critical operational bottlenecks:
-1. **Proprietary & Fragmented Formats**: CCTV vendors (Dahua, Hikvision, TP-Link, CP PLUS, Uniview, Honeywell, etc.) use non-standard file wrappers (`.dav`, `.hkv`, `.uvf`, `.hos`, `.raw`), custom packet headers, and proprietary timestamp encoding that standard video players cannot open.
+1. **Proprietary & Fragmented Formats**: CCTV vendors (Dahua, Hikvision, TP-Link, CP PLUS, Uniview, Honeywell, Godrej, Matrix Comsec, etc.) use non-standard file wrappers (`.dav`, `.hkv`, `.uvf`, `.hos`, `.gdr`, `.sat`, `.raw`), custom packet headers, and proprietary timestamp encoding that standard video players cannot open.
 2. **Evidence Spoliation Risks**: Parsing or viewing footage directly from original exhibits risks altering digital timestamps or file attributes, compromising admissibility under Section 65B of the Indian Evidence Act / Section 63 of the Bharatiya Sakshya Adhiniyam (BSA), 2023.
 3. **Corrupted or Overwritten Footage**: Power cuts, physical impacts, or deliberate tampering leave files with damaged filesystem structures and fragmented streams.
 4. **Clock Drift Across Multiple Cameras**: Surveillance systems in disparate areas have unsynchronized internal clocks, frustrating chronological multi-camera timeline reconstruction.
@@ -60,10 +60,10 @@ ForensIQ Vault is designed specifically around **digital forensics best practice
        │                           │                           │
  ┌──────▼────────────────┐ ┌────────▼───────────────┐ ┌─────────▼────────────────┐
  │ Multi-Vendor Adapters │ │ Two-Tier Recovery     │ │ Timeline & AI Triage      │
- │ - Dahua DHAV / .dav   │ │ - Tier 1: Filesystem  │ │ - Multi-Camera Clock Sync │
- │ - Hikvision HKH4/.hkv │ │   DHFS Index Recovery │ │ - Frame Activity Triage   │
- │ - CP Plus / Uniview   │ │ - Tier 2: Deep Annex-B│ │ - Ethical Constraints     │
- │ - Honeywell / TP-Link │ │   NAL Stream Carving  │ │   (NO FACE RECOGNITION)   │
+ │ - Dahua / Hikvision   │ │ - Tier 1: Filesystem  │ │ - Multi-Camera Clock Sync │
+ │ - CP Plus / Uniview   │ │   DHFS Index Recovery │ │ - Cross-Camera Event Corr │
+ │ - Honeywell / TP-Link │ │ - Tier 2: Deep Annex-B│ │ - Frame Activity Triage   │
+ │ - Godrej / Matrix     │ │   NAL Stream Carving  │ │ - Ethical AI (NO FACES)   │
  └───────────────────────┘ └────────────────────────┘ └───────────────────────────┘
                                    │
                                    ▼
@@ -86,23 +86,24 @@ ForensIQ Vault is designed specifically around **digital forensics best practice
 
 ---
 
-## ⚖️ AI Analytics Scope & Ethical Constraints
+## ⚖️ Ethical AI Design Decision: Forensic Analytics Deliverable vs Biometric Exclusion
 
-Smart India Hackathon 2026 Problem Statement 26150 lists *"face, object, and motion detection"* among potential analytics. ForensIQ Vault makes a deliberate, principled, and legally grounded architectural decision: **Biometric facial recognition, 1:N identity matching, and facial template vector extraction are strictly excluded by design.**
+Smart India Hackathon 2026 Problem Statement 26150 lists *"face, object, and motion detection"* among potential analytics. ForensIQ Vault makes an intentional, principled, and legally grounded design decision: **Biometric facial recognition, 1:N identity matching, and facial template vector extraction were deliberately excluded by design; in their place, objective surveillance object detection, pixel-motion kinetics, and temporal activity classification (`forensiq/ml/surveillance_activity_classifier.py`) were implemented as the core AI deliverable.**
 
 ### 1. Statutory Inadmissibility Risks under Section 63 BSA 2023 & Section 65B IEA
 In forensic jurisprudence and criminal trials, digital evidence submitted under **Section 63 of the Bharatiya Sakshya Adhiniyam, 2023** (formerly Section 65B of the Indian Evidence Act, 1872) must establish an unassailable standard of technological reliability and byte-level authenticity.
-- Automated facial recognition systems (FRTs) are inherently probabilistic, suffering from documented error rates, demographic biases, and false-positive match hallucinations—particularly on low-resolution, low-framerate, or night-vision CCTV footage.
-- Introducing probabilistic identity claims into a forensic evidence report creates severe risks of wrongful accusation, misidentification, and pre-trial evidence suppression under judicial challenge.
+- Automated facial recognition technologies (FRTs) are inherently probabilistic, suffering from documented error rates, demographic biases, and false-positive match hallucinations—particularly on low-resolution, low-framerate, or night-vision CCTV footage typical of seized crime scene DVRs.
+- Introducing automated, unverified biometric identity claims into a forensic court exhibit creates severe risks of wrongful accusation, misidentification, and pre-trial evidence suppression under judicial challenge (*State v. Navjot Sandhu*, *Arjun Panditrao Khotkar v. Kailash Kushanrao Gorantyal*).
 
 ### 2. Privacy & Constitutional Mandates (DPDP Act 2023 & Puttaswamy Ruling)
-Under India's **Digital Personal Data Protection Act (DPDP Act), 2023** and the Supreme Court of India's landmark nine-judge bench ruling in *Justice K.S. Puttaswamy (Retd.) v. Union of India (2017)*, biometric data constitutes sensitive personal data requiring strict legal necessity and proportionality. CCTV footage seized from public areas captures hundreds of uninvolved bystanders; processing their facial templates without statutory grounds infringes fundamental privacy rights.
+Under India's **Digital Personal Data Protection Act (DPDP Act), 2023** and the Supreme Court of India's landmark nine-judge bench ruling in *Justice K.S. Puttaswamy (Retd.) v. Union of India (2017)*, biometric data constitutes sensitive personal data requiring strict statutory necessity, proportionality, and explicit legal safeguards. CCTV footage seized from public areas captures hundreds of uninvolved bystanders; extracting and cataloging their biometric facial vectors without judicial warrants infringes constitutional privacy protections.
 
-### 3. Enforced Technical Boundaries
-ForensIQ Vault strictly enforces this distinction within the code:
-- **Permitted Forensic Triage**: Localized bounding-box detection of general object classes (`person`, `car`, `motorcycle`, `bus`, `truck`), pixel-level frame motion energy, temporal scene change identification, and opt-in anonymized presence count.
-- **Architecturally Blocked**: Biometric landmark extraction, facial vector embedding generation, gallery face matching, and automated suspect identity linkage.
-- **Mandatory Human Verification**: All AI detections are initialized to `status = PENDING`. No AI finding is admitted to the forensic dossier without explicit sign-off by a qualified human examiner.
+### 3. Delivered AI Deliverable: Objective Object & Activity Triage
+Rather than unvalidated biometric surveillance, ForensIQ Vault delivers robust, legally sound forensic triage:
+- **Object Class Detection**: Localized bounding boxes for forensic entities (`person`, `vehicle` [car, motorcycle, bus, truck]) using pretrained YOLOv8n, assisting examiners in rapidly locating segments of interest.
+- **Surveillance Activity & Motion Dynamics**: Offline random forest classifier (`surveillance_activity_classifier.py`) assessing temporal motion energy, bounding-box aspect-ratio dynamics, and scene shifts without extracting biometric markers.
+- **Cross-Camera Event Correlation**: Temporal event grouping within a configurable forensic window ($\Delta t \le 30\text{s}$) across disparate camera exhibits.
+- **Enforced Human-in-the-Loop**: All AI detections are ingested in a `PENDING` state and require affirmative human examiner sign-off (`CONFIRMED` or `REJECTED`) before inclusion in the final court-admissible dossier.
 
 ---
 
@@ -115,10 +116,10 @@ ForensIQ Vault strictly enforces this distinction within the code:
 | **Evidence Ingestion** | Chunked streaming SHA-256 and MD5 calculation with live progress reporting, format validation, filename sanitization, read-only locking, and atomic companion manifests. |
 | **Chain of Custody Ledger** | Sequential cryptographic ledger, mathematical tamper detection, manual event logging (handoffs, analyst notes), canonical JSON export, and RFC 4180 CSV export. |
 | **Video Stream Analysis** | Non-destructive `ffprobe` metadata parsing on working copies, 4-part forensic validation sanity checks (codec consistency, future/past timestamp sanity, bitrate truncation, stream dimensions). |
-| **Vendor Adapters** | 6 OEM Vendor Profiles: **Dahua Technology** (`DHAV`/`DAHUA`/`DHFS`), **Hikvision** (`HIKVISION`/`HKAA`/`HKBB`), **CP Plus** (`CPPLUS`/`CPPL`/`.cvr`), **Uniview** (`UBVR`/`UNVREC`/`.uvf`), **Honeywell Security** (`HONEYWELL`/`HOS`/`.hos`), and **TP-Link VIGI/Tapo** (ONVIF Profile S/G) with graceful fallback to `GenericMediaAdapter` and `UnknownSourceAdapter`. |
+| **Vendor Adapters** | **8 OEM Vendor Profiles**: **Dahua Technology** (`DHAV`/`DAHUA`/`DHFS`), **Hikvision** (`HIKVISION`/`HKAA`/`HKBB`), **CP Plus** (`CPPLUS`/`CPPL`/`.cvr`), **Uniview** (`UBVR`/`UNVREC`/`.uvf`), **Honeywell Security** (`HONEYWELL`/`HOS`/`.hos`), **TP-Link VIGI/Tapo** (ONVIF Profile S/G), **Godrej Security Solutions** (`GODREJ`/`GDRJ`/`SEETHRU`/`.gdr`/`.sec`), and **Matrix Comsec** (`MATRIX`/`MTRX`/`SATATYA`/`.sat`/`.mtx`) with graceful fallback to `GenericMediaAdapter` and `UnknownSourceAdapter`. |
 | **Video Carving Recovery** | Two-tier recovery engine: Tier 1 Filesystem-entry index recovery (e.g. Dahua DHFS deleted recording clusters) with Tier 2 deep Annex-B NAL unit scanner (H.264 / H.265 SPS, PPS, VPS, IDR, Slices) extracting playable derivatives from damaged/unallocated dumps. Guided by real-time ML sector classification. Includes mandatory statutory limitations disclaimers. |
-| **Forensic ML Suite** | Offline scikit-learn statistical models: (1) **DVR Stream & Sector Classifier** identifying proprietary Dahua/Hikvision/TP-Link/H.264/Corrupt sectors by Shannon entropy and header signatures; (2) **Surveillance Activity Classifier** categorizing motion dynamics without biometric facial recognition. |
-| **Multi-Camera Timeline** | Multi-camera chronological event correlation, non-destructive offset timestamp normalization (preserving raw timestamps), automated footage gap (>120s) and timeline reversal anomaly auditing. |
+| **Forensic ML Suite** | Offline scikit-learn statistical pipelines trained on realistic, noise-injected synthetic benchmarks: (1) **DVR Stream & Sector Classifier** (91.33% held-out test accuracy) identifying Dahua/Hikvision/TP-Link/H.264/Corrupt sectors; (2) **Surveillance Activity Classifier** (98.63% held-out test accuracy, 0.986 F1) categorizing motion and object kinematics without biometric facial recognition. |
+| **Multi-Camera Timeline** | Multi-camera chronological event correlation, **cross-camera spatio-temporal event grouping** (configurable time window $\Delta t$, default 30.0s), non-destructive offset timestamp normalization (preserving raw timestamps), automated footage gap (>120s) and timeline reversal anomaly auditing. |
 | **AI-Assisted Triage** | Triple-engine architecture: (1) **YOLOv8** (`ultralytics` + `yolov8n.pt`) deep neural network object detector for localized bounding-box surveillance triage; (2) **Google Gemini API** (`gemini-2.5-flash`) for cloud multimodal analysis; (3) **Offline Local ML Heuristic Classifier** (`ForensIQ-ML-Activity-Classifier-v1.0`) for air-gapped environments. Pre-classifies video frames for investigator review without biometric facial recognition. |
 | **Court Dossier Reporting** | Interactive responsive HTML dossier (with dedicated `@media print` layout), structured JSON interchange dossier, and native A4 PDF generation with Section 65B IEA / Section 63 BSA certificates and cryptographic seals. |
 
@@ -137,6 +138,8 @@ ForensIQ Vault/
 │   │   ├── uniview_export.py      # Uniview UBVR/.uvf parser
 │   │   ├── honeywell_export.py    # Honeywell HOS/.hos parser
 │   │   ├── tplink_onvif_rtsp.py   # TP-Link VIGI ONVIF parser
+│   │   ├── godrej_export.py       # Godrej SeeThru/EVE GDR/.gdr parser
+│   │   ├── matrix_export.py       # Matrix SATATYA SAT/.sat parser
 │   │   ├── generic_media.py       # Standard MP4/MKV/AVI ffprobe parser
 │   │   ├── unknown_source.py      # Graceful fallback adapter
 │   │   └── registry.py            # Adapter registry & profile synchronizer
@@ -166,15 +169,15 @@ ForensIQ Vault/
 │   ├── deliverables/              # SIH 26150 formal documentation deliverables
 │   │   ├── comparative_oem_analysis.md # Comparative analysis of all 8 named OEMs
 │   │   ├── sop.md                 # Standard Operating Procedure for investigators
-│   │   ├── validation_report.md   # Verification & 250-test validation report
+│   │   ├── validation_report.md   # Verification & 268-test validation report
 │   │   ├── user_manual.md         # Task-oriented operator manual with screenshots
 │   │   └── final_project_report.md# Formal final project evaluation report
 │   └── screenshots/               # UI application screenshots
-├── sample_evidence/               # Synthetic surveillance exhibits (EX01-EX07)
+├── sample_evidence/               # Synthetic surveillance exhibits (EX01-EX09)
 ├── scripts/
 │   ├── generate_sample_evidence.py# Synthetic exhibit generator script
 │   └── train_models.py            # ML training pipeline for forensic classifiers
-├── tests/                         # Comprehensive pytest test suite (250 tests)
+├── tests/                         # Comprehensive pytest test suite (268 tests)
 ├── JURY_DEMO_SCRIPT.md            # 5-minute timed presentation walkthrough
 ├── pyproject.toml                 # Packaging & dependencies
 └── README.md                      # Comprehensive documentation
@@ -232,21 +235,24 @@ This generates:
 5. `EX05_CPPlus_CAM04_Perimeter.dav` — CP Plus Orange-OS capture with CPPLUS vendor marker.
 6. `EX06_Uniview_CAM05_ServerRoom.uvf` — Uniview NVR capture with UBVR frame index structure.
 7. `EX07_Honeywell_CAM06_HQGate.hos` — Honeywell MAXPRO export wrapper with HOS signature.
+8. `EX08_Godrej_CAM07_Warehouse.gdr` — Godrej SeeThru/EVE CCTV capture with GODREJ proprietary header markers.
+9. `EX09_Matrix_CAM08_MainLobby.sat` — Matrix SATATYA series export with MATRIX container signature.
 
 ### Train Forensic Machine Learning Models
 To retrain the offline statistical classifiers (or view metrics in `forensiq/ml/EVALUATION_REPORT.md`):
 ```powershell
 python scripts/train_models.py
 ```
-This trains and validates two `Pipeline([StandardScaler, RandomForestClassifier])` models:
-1. **DVR Stream & Sector Classifier**: Classifies disk sectors into `DAHUA_STREAM`, `HIKVISION_STREAM`, `TPLINK_ONVIF_STREAM`, `GENERIC_H264_STREAM`, and `CORRUPT_NOISE`.
-2. **Surveillance Activity Classifier**: Classifies bounding box kinematics and pixel shifts into `person`, `vehicle`, `motion`, `scene_change`, and `anomaly` without facial recognition.
+This trains and evaluates two `Pipeline([StandardScaler, RandomForestClassifier])` models on expanded, noise-injected synthetic datasets with a strict 75/25 held-out test split:
+1. **DVR Stream & Sector Classifier**: Classifies disk sectors into `DAHUA_STREAM`, `HIKVISION_STREAM`, `TPLINK_ONVIF_STREAM`, `GENERIC_H264_STREAM`, and `CORRUPT_NOISE` (91.33% held-out test accuracy, 0.914 F1).
+2. **Surveillance Activity Classifier**: Classifies bounding box kinematics and pixel shifts into `person`, `vehicle`, `motion`, `scene_change`, and `anomaly` without facial recognition (98.63% held-out test accuracy, 0.986 F1).
 
 ### Run Automated Test Suite
-To verify the entire forensic pipeline (250 tests):
+To verify the entire forensic pipeline (268 tests):
 ```powershell
 pytest -v
 ```
+
 
 ---
 

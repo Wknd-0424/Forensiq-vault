@@ -361,6 +361,43 @@
     Chronologically unified events across all video feeds. Normalized UTC times are derived values; 
     raw device timestamps remain un-altered.
   </p>
+
+  {% if cross_camera_correlations %}
+  <h3 style="color: var(--accent); font-size: 13px; margin-top: 20px; margin-bottom: 6px;">4.1 Cross-Camera Correlated Events</h3>
+  <p style="font-size: 12px; color: var(--text-muted); margin-top: 0; margin-bottom: 8px;">
+    Detected entities (person, vehicle, motion) observed across multiple independent camera feeds within the configured time window.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Correlation ID</th>
+        <th>Entity</th>
+        <th>Start UTC</th>
+        <th>End UTC</th>
+        <th>Span</th>
+        <th>Cameras Involved</th>
+        <th>Events</th>
+        <th>Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for corr in cross_camera_correlations %}
+      <tr>
+        <td class="mono"><strong>{{ corr.correlation_id }}</strong></td>
+        <td><span class="badge" style="background: #0284c7; color: #fff;">{{ corr.entity_type|upper }}</span></td>
+        <td class="mono">{{ corr.start_time_utc }}</td>
+        <td class="mono">{{ corr.end_time_utc }}</td>
+        <td>{{ "%.1fs"|format(corr.time_span_seconds) }}</td>
+        <td><strong>{{ corr.cameras|join(", ") }}</strong> ({{ corr.camera_count }} cams)</td>
+        <td>{{ corr.event_count }}</td>
+        <td>{{ corr.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3 style="color: var(--accent); font-size: 13px; margin-top: 20px; margin-bottom: 6px;">4.2 Unified Event Ledger</h3>
   <table>
     <thead>
       <tr>

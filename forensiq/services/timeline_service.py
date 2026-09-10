@@ -374,6 +374,189 @@ def detect_timeline_gaps(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cross-Camera Event Correlation Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+def extract_event_entity_class(description: Optional[str]) -> str:
+    """
+    Extract and normalize the entity/activity class from an event description.
+    Maps fine-grained detector classes to canonical surveillance categories:
+      - person / pedestrian -> 'person'
+      - car / truck / bus / motorcycle / vehicle -> 'vehicle'
+      - motion / environmental -> 'motion'
+      - scene_change / tamper -> 'scene_change'
+      - anomaly -> 'anomaly'
+    Returns canonical class name or 'other' if unclassified.
+    """
+    if not description:
+        return "other"
+
+    desc_lower = description.lower()
+
+    # Pattern: AI Detection: <class> (<conf>)
+    if "ai detection:" in desc_lower:
+        part = desc_lower.split("ai detection:", 1)[1].strip()
+        tokens = part.split()
+        if tokens:
+            candidate = tokens[0].strip("():,")
+            if candidate in ("person", "pedestrian"):
+                return "person"
+            if candidate in ("car", "motorcycle", "bus", "truck", "vehicle"):
+                return "vehicle"
+            if candidate in ("motion", "scene_change", "anomaly"):
+                return candidate
+
+    # Fallback keyword scanning
+    if any(k in desc_lower for k in ("person", "pedestrian", "subject", "suspect")):
+        return "person"
+    if any(k in desc_lower for k in ("car", "vehicle", "truck", "motorcycle", "bus", "auto", "license")):
+        return "vehicle"
+    if "scene_change" in desc_lower or "scene change" in desc_lower or "tamper" in desc_lower:
+        return "scene_change"
+    if "anomaly" in desc_lower or "outlier" in desc_lower:
+        return "anomaly"
+    if "motion" in desc_lower:
+        return "motion"
+
+    return "other"
+
+
+def correlate_cross_camera_events(
+    events: list[TimelineEvent],
+    time_window_seconds: float = 30.0,
+    camera_map: Optional[dict[str, str]] = None,
+) -> list[dict[str, Any]]:
+    """
+    Correlate detected surveillance events across multiple cameras within a configurable time window.
+
+    Algorithm:
+    1. Filter events with valid normalized UTC timestamps.
+    2. Map each event to its camera identifier (using camera_map, segment_id, or evidence_id).
+    3. Categorize each event into its canonical entity type (person, vehicle, motion, etc.).
+    4. Group matching entity events occurring within *time_window_seconds* of each other.
+    5. Filter out single-camera-only groups: only retain clusters spanning >= 2 distinct cameras.
+
+    Returns a list of cross-camera correlation groups sorted chronologically.
+    """
+    camera_map = camera_map or {}
+    timed_events: list[tuple[TimelineEvent, str, str]] = []
+
+    for ev in events:
+        if ev.normalized_timestamp_utc is None:
+            continue
+        cam = camera_map.get(ev.evidence_id, ev.evidence_id or ev.segment_id or "Camera-Unknown")
+        entity = extract_event_entity_class(ev.description)
+        timed_events.append((ev, cam, entity))
+
+    if not timed_events:
+        return []
+
+    # Sort all timed events by timestamp
+    timed_events.sort(key=lambda item: item[0].normalized_timestamp_utc)
+
+    # Group by entity type first
+    by_entity: dict[str, list[tuple[TimelineEvent, str, str]]] = {}
+    for item in timed_events:
+        ent = item[2]
+        by_entity.setdefault(ent, []).append(item)
+
+    correlations: list[dict[str, Any]] = []
+    corr_idx = 1
+
+    for entity, ent_events in by_entity.items():
+        if len(ent_events) < 2:
+            continue
+
+        # Cluster events within the time window
+        clusters: list[list[tuple[TimelineEvent, str, str]]] = []
+        current_cluster: list[tuple[TimelineEvent, str, str]] = [ent_events[0]]
+
+        for i in range(1, len(ent_events)):
+            curr_ev = ent_events[i]
+            prev_ev = current_cluster[-1]
+            diff = (curr_ev[0].normalized_timestamp_utc - prev_ev[0].normalized_timestamp_utc).total_seconds()
+
+            if diff <= time_window_seconds:
+                current_cluster.append(curr_ev)
+            else:
+                clusters.append(current_cluster)
+                current_cluster = [curr_ev]
+
+        if current_cluster:
+            clusters.append(current_cluster)
+
+        # Retain only clusters that span >= 2 distinct cameras
+        for cluster in clusters:
+            cams_in_cluster = {c for _, c, _ in cluster}
+            if len(cams_in_cluster) >= 2:
+                start_dt = cluster[0][0].normalized_timestamp_utc
+                end_dt = cluster[-1][0].normalized_timestamp_utc
+                span = (end_dt - start_dt).total_seconds()
+
+                cluster_events_data = []
+                for ev, cam, _ in cluster:
+                    cluster_events_data.append({
+                        "event_id": ev.id,
+                        "camera": cam,
+                        "evidence_id": ev.evidence_id,
+                        "segment_id": ev.segment_id,
+                        "timestamp_utc": to_iso8601(ev.normalized_timestamp_utc),
+                        "raw_timestamp": ev.raw_timestamp or "—",
+                        "confidence": ev.confidence or "HIGH",
+                        "analyst_status": ev.analyst_status,
+                        "description": ev.description or "",
+                    })
+
+                cam_names = sorted(list(cams_in_cluster))
+                correlations.append({
+                    "correlation_id": f"CORR-{corr_idx:04d}",
+                    "entity_type": entity,
+                    "start_time_utc": to_iso8601(start_dt),
+                    "end_time_utc": to_iso8601(end_dt),
+                    "time_span_seconds": round(span, 2),
+                    "time_window_seconds": time_window_seconds,
+                    "camera_count": len(cams_in_cluster),
+                    "cameras": cam_names,
+                    "event_count": len(cluster),
+                    "events": cluster_events_data,
+                    "description": (
+                        f"Cross-Camera {entity.upper()} event correlated across {len(cams_in_cluster)} cameras "
+                        f"({', '.join(cam_names)}) within {span:.1f}s (window: {time_window_seconds:.0f}s)"
+                    ),
+                })
+                corr_idx += 1
+
+    # Sort all correlations chronologically by start_time_utc
+    correlations.sort(key=lambda c: c["start_time_utc"])
+    return correlations
+
+
+def get_case_cross_camera_correlations(
+    session: Session,
+    case_id: str,
+    time_window_seconds: float = 30.0,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve and correlate cross-camera events for an entire case.
+    Resolves human-readable camera labels from EvidenceItem records.
+    """
+    events = (
+        session.query(TimelineEvent)
+        .filter_by(case_id=case_id)
+        .order_by(TimelineEvent.normalized_timestamp_utc.asc().nulls_last())
+        .all()
+    )
+
+    evidence_items = session.query(EvidenceItem).filter_by(case_id=case_id).all()
+    camera_map = {}
+    for item in evidence_items:
+        label = item.evidence_number or item.source_filename
+        camera_map[item.id] = label
+
+    return correlate_cross_camera_events(events, time_window_seconds=time_window_seconds, camera_map=camera_map)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Exports (JSON & CSV)
 # ─────────────────────────────────────────────────────────────────────────────
 

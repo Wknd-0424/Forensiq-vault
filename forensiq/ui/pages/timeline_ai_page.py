@@ -75,6 +75,7 @@ from forensiq.services.timeline_service import (
     detect_timeline_gaps,
     export_timeline_csv,
     export_timeline_json,
+    get_case_cross_camera_correlations,
     get_case_timeline,
     get_segments_for_case,
 )
@@ -515,6 +516,10 @@ class TimelineAIPage(QWidget):
         audit_tab = self._build_audit_tab()
         self._right_tabs.addTab(audit_tab, "⏱ Gap & Drift Audit")
 
+        # Tab 4: Cross-Camera Correlated Events
+        corr_tab = self._build_cross_camera_tab()
+        self._right_tabs.addTab(corr_tab, "🔀 Cross-Camera Correlation")
+
         vbox.addWidget(self._right_tabs, stretch=1)
         return dock
 
@@ -660,6 +665,152 @@ class TimelineAIPage(QWidget):
         )
         layout.addWidget(self._audit_detail_box, stretch=1)
         return widget
+
+    def _build_cross_camera_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # Header and controls row
+        ctrl_row = QHBoxLayout()
+        title = QLabel("CROSS-CAMERA CORRELATED SURVEILLANCE EVENTS")
+        title.setStyleSheet("color: #38bdf8; font-weight: bold; font-size: 11px;")
+        ctrl_row.addWidget(title)
+
+        ctrl_row.addStretch()
+
+        win_lbl = QLabel("Window:")
+        win_lbl.setStyleSheet("color: #9aa5b4; font-size: 10px;")
+        ctrl_row.addWidget(win_lbl)
+
+        self._corr_window_spin = QDoubleSpinBox()
+        self._corr_window_spin.setRange(1.0, 600.0)
+        self._corr_window_spin.setValue(30.0)
+        self._corr_window_spin.setDecimals(0)
+        self._corr_window_spin.setSuffix(" s")
+        self._corr_window_spin.setFixedWidth(70)
+        self._corr_window_spin.setStyleSheet(
+            "background: #12181f; color: #e8f0fe; border: 1px solid #2d4a6a; "
+            "border-radius: 4px; padding: 2px 4px; font-size: 10px;"
+        )
+        ctrl_row.addWidget(self._corr_window_spin)
+
+        self._recorrelate_btn = QPushButton("🔄 Correlate")
+        self._recorrelate_btn.setStyleSheet(
+            "QPushButton { background: #0369a1; color: #ffffff; font-weight: bold; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 10px; }"
+            "QPushButton:hover { background: #0284c7; }"
+        )
+        self._recorrelate_btn.clicked.connect(self._refresh_cross_camera_correlations)
+        ctrl_row.addWidget(self._recorrelate_btn)
+
+        layout.addLayout(ctrl_row)
+
+        desc_lbl = QLabel("Groups detected entities (person, vehicle, motion) observed across multiple cameras within the specified time window:")
+        desc_lbl.setStyleSheet("color: #64748b; font-size: 10px;")
+        layout.addWidget(desc_lbl)
+
+        # Table of correlated groups
+        cols = ["ID", "Entity", "Cameras", "Span", "Events", "Start Time (UTC)"]
+        self._corr_table = QTableWidget(0, len(cols))
+        self._corr_table.setHorizontalHeaderLabels(cols)
+        self._corr_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._corr_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self._corr_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self._corr_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self._corr_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self._corr_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self._corr_table.verticalHeader().setVisible(False)
+        self._corr_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._corr_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._corr_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._corr_table.setAlternatingRowColors(True)
+        self._corr_table.setStyleSheet(
+            "QTableWidget { background: #0a1118; color: #cdd6e0; border: 1px solid #1e3a5f; border-radius: 4px; }"
+            "QHeaderView::section { background: #0a1628; color: #38bdf8; padding: 5px; font-size: 10px; font-weight: bold; }"
+            "QTableWidget::item:selected { background: #0c4a6e; color: #ffffff; }"
+        )
+        self._corr_table.itemSelectionChanged.connect(self._on_correlation_selected)
+        layout.addWidget(self._corr_table, stretch=2)
+
+        # Detail box for selected correlation
+        det_lbl = QLabel("CORRELATION TRACK DETAILS:")
+        det_lbl.setStyleSheet("color: #9aa5b4; font-size: 10px; font-weight: bold;")
+        layout.addWidget(det_lbl)
+
+        self._corr_detail_box = QTextEdit()
+        self._corr_detail_box.setReadOnly(True)
+        self._corr_detail_box.setStyleSheet(
+            "QTextEdit { background: #0a1118; color: #cdd6e0; border: 1px solid #1e3a5f; "
+            "border-radius: 4px; font-family: 'Courier New'; font-size: 10px; padding: 6px; }"
+        )
+        layout.addWidget(self._corr_detail_box, stretch=1)
+
+        self._active_correlations = []
+        return widget
+
+    def _refresh_cross_camera_correlations(self) -> None:
+        active_case_id = self._main_window.active_case_id
+        if not active_case_id:
+            self._corr_table.setRowCount(0)
+            self._corr_detail_box.setText("No active case.")
+            return
+
+        window_sec = self._corr_window_spin.value()
+        session = get_session()
+        try:
+            corrs = get_case_cross_camera_correlations(session, active_case_id, time_window_seconds=window_sec)
+            self._active_correlations = corrs
+            self._corr_table.setRowCount(0)
+            self._corr_table.setRowCount(len(corrs))
+
+            for row, c in enumerate(corrs):
+                self._corr_table.setItem(row, 0, QTableWidgetItem(c["correlation_id"]))
+                self._corr_table.setItem(row, 1, QTableWidgetItem(c["entity_type"].upper()))
+                self._corr_table.setItem(row, 2, QTableWidgetItem(", ".join(c["cameras"])))
+                self._corr_table.setItem(row, 3, QTableWidgetItem(f"{c['time_span_seconds']:.1f}s"))
+                self._corr_table.setItem(row, 4, QTableWidgetItem(str(c["event_count"])))
+                self._corr_table.setItem(row, 5, QTableWidgetItem(c["start_time_utc"]))
+
+            if corrs:
+                self._corr_table.selectRow(0)
+            else:
+                self._corr_detail_box.setText(f"No cross-camera correlated events detected within {window_sec:.0f}s time window.\nSingle-camera detections remain listed in the AI Triage tab.")
+        except Exception as exc:
+            logger.exception("Failed refreshing cross-camera correlations: %s", exc)
+            self._corr_detail_box.setText(f"Error computing correlations: {exc}")
+        finally:
+            session.close()
+
+    def _on_correlation_selected(self) -> None:
+        selected_rows = self._corr_table.selectionModel().selectedRows()
+        if not selected_rows or not self._active_correlations:
+            self._corr_detail_box.clear()
+            return
+
+        row = selected_rows[0].row()
+        if row >= len(self._active_correlations):
+            return
+
+        corr = self._active_correlations[row]
+        lines = [
+            f"Correlation ID   : {corr['correlation_id']}",
+            f"Entity Type      : {corr['entity_type'].upper()}",
+            f"Cameras Involved : {', '.join(corr['cameras'])} ({corr['camera_count']} cameras)",
+            f"Time Window Span : {corr['time_span_seconds']:.1f} seconds",
+            f"Start (UTC)      : {corr['start_time_utc']}",
+            f"End (UTC)        : {corr['end_time_utc']}",
+            "-" * 60,
+            "CHRONOLOGICAL CROSS-CAMERA OBSERVATIONS:",
+        ]
+
+        for i, ev_data in enumerate(corr.get("events", []), start=1):
+            lines.append(
+                f"  [{i}] {ev_data['timestamp_utc']} | {ev_data['camera']} | {ev_data['confidence']} conf | {ev_data['description']}"
+            )
+
+        self._corr_detail_box.setText("\n".join(lines))
 
     # ─────────────────────────────────────────────────────────────────────────
     # Event Table Panel
@@ -827,6 +978,10 @@ class TimelineAIPage(QWidget):
         self._reject_btn.setEnabled(False)
         if hasattr(self, "_needs_review_btn"):
             self._needs_review_btn.setEnabled(False)
+        if hasattr(self, "_corr_table"):
+            self._corr_table.setRowCount(0)
+        if hasattr(self, "_corr_detail_box"):
+            self._corr_detail_box.clear()
 
     def _load_timeline_data(self, evidence_id: str) -> None:
         active_case_id = self._main_window.active_case_id
@@ -882,6 +1037,9 @@ class TimelineAIPage(QWidget):
             # Load AI detections specifically for this evidence item per spec
             detections = list_detections_for_evidence(session, evidence_id)
             self._populate_detection_table(detections)
+
+            # Refresh cross-camera correlations
+            self._refresh_cross_camera_correlations()
 
             # Run gap analysis
             gaps = detect_timeline_gaps(events)
